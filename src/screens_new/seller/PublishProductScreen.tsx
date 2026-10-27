@@ -1,8 +1,9 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import * as ImagePicker from 'expo-image-picker';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { createProduct } from '@/services/products-api';
+import * as ImagePicker from 'expo-image-picker';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
+import { useState } from 'react';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Eyebrow, Field, PageHeading, PrimaryButton, Screen, palette } from '../shared/screen-ui';
 
 const categories = ['Panadería', 'Pupusería', 'Comida preparada', 'Postres', 'Otros'];
@@ -76,7 +77,7 @@ export default function PublishProductScreen() {
   }
 
   return (
-    <Screen>
+    <Screen showBottomNav>
       <Eyebrow>Panel del negocio</Eyebrow>
       <PageHeading title="Publica un pack" description="Tu publicación se guardará en la API y aparecerá en Explorar en los demás dispositivos." />
       <Field autoCapitalize="sentences" label="Nombre del producto" onChangeText={setName} placeholder="Ej. Pack sorpresa del día" value={name} />
@@ -105,7 +106,7 @@ export default function PublishProductScreen() {
         </View>
       ) : (
         <Pressable accessibilityRole="button" onPress={() => { void choosePhoto(); }} style={styles.photoButton}>
-          <Text style={styles.photoButtonIcon}>＋</Text>
+          <SymbolView name={{ ios: 'photo.badge.plus', android: 'add_photo_alternate', web: 'add_photo_alternate' }} tintColor={palette.purple} size={22} />
           <Text style={styles.photoButtonText}>Elegir foto de la galería</Text>
         </Pressable>
       )}
@@ -120,15 +121,14 @@ export default function PublishProductScreen() {
 const styles = StyleSheet.create({
   label: { color: palette.text, fontSize: 14, fontWeight: '700', marginBottom: 9 },
   categories: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 15 },
-  categoryChip: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 14, borderWidth: 1, paddingHorizontal: 11, paddingVertical: 8 },
-  categoryChipActive: { backgroundColor: '#F1E5F7', borderColor: palette.purple },
+  categoryChip: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 11, borderWidth: 1, paddingHorizontal: 11, paddingVertical: 8 },
+  categoryChipActive: { backgroundColor: '#E8EFE0', borderColor: palette.purple },
   categoryChipText: { color: palette.muted, fontSize: 11, fontWeight: '600' },
   categoryChipTextActive: { color: palette.purple, fontWeight: '800' },
   multiline: { height: 86, paddingTop: 12, textAlignVertical: 'top' },
   twoColumns: { flexDirection: 'row', gap: 12 },
   column: { flex: 1 },
-  photoButton: { alignItems: 'center', backgroundColor: palette.white, borderColor: palette.border, borderRadius: 15, borderStyle: 'dashed', borderWidth: 1.5, flexDirection: 'row', gap: 10, justifyContent: 'center', minHeight: 57 },
-  photoButtonIcon: { color: palette.purple, fontSize: 23, fontWeight: '600' },
+  photoButton: { alignItems: 'center', backgroundColor: palette.white, borderColor: '#CCD4C5', borderRadius: 13, borderStyle: 'dashed', borderWidth: 1.5, flexDirection: 'row', gap: 10, justifyContent: 'center', minHeight: 62 },
   photoButtonText: { color: palette.purple, fontSize: 12, fontWeight: '800' },
   photoPreviewWrap: { borderRadius: 15, overflow: 'hidden' },
   photoPreview: { backgroundColor: '#EAF3D8', height: 170, width: '100%' },

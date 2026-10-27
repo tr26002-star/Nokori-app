@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Eyebrow, Field, PageHeading, PrimaryButton, Screen, palette } from '../shared/screen-ui';
@@ -50,11 +51,16 @@ export default function AuthScreen() {
       <Eyebrow>Cuenta de {isSeller ? 'vendedor' : 'cliente'}</Eyebrow>
       <PageHeading title="Qué bueno verte." description="Accede a tu cuenta para continuar en Nokory." />
       <Pressable onPress={() => router.replace('/role-select')} style={styles.changeRole}>
-        <Text style={styles.changeRoleText}>‹  Cambiar tipo de perfil</Text>
+        <View style={styles.changeRoleContent}>
+          <SymbolView name={{ ios: 'arrow.left', android: 'arrow_back', web: 'arrow_back' }} tintColor={palette.muted} size={16} />
+          <Text style={styles.changeRoleText}>Cambiar tipo de perfil</Text>
+        </View>
       </Pressable>
       <View style={styles.formCard}>
         <View style={styles.formHeading}>
-          <View style={[styles.avatar, isSeller ? styles.sellerAvatar : null]}><Text style={styles.avatarText}>{isSeller ? '▣' : '♡'}</Text></View>
+          <View style={[styles.avatar, isSeller ? styles.sellerAvatar : null]}>
+            <SymbolView name={{ ios: isSeller ? 'storefront.fill' : 'heart.fill', android: isSeller ? 'storefront' : 'favorite', web: isSeller ? 'storefront' : 'favorite' }} tintColor={isSeller ? '#527346' : palette.purple} size={22} />
+          </View>
           <View>
             <Text style={styles.roleLabel}>{isSeller ? 'VENDEDOR' : 'CLIENTE'}</Text>
             <Text style={styles.formTitle}>{isRegistering ? 'Crear cuenta' : 'Iniciar sesión'}</Text>
@@ -110,22 +116,22 @@ export default function AuthScreen() {
 
 const styles = StyleSheet.create({
   changeRole: { marginBottom: 13, marginTop: -10, paddingVertical: 8 },
+  changeRoleContent: { alignItems: 'center', flexDirection: 'row', gap: 7 },
   changeRoleText: { color: palette.muted, fontSize: 13, fontWeight: '600' },
-  formCard: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 22, borderWidth: 1, padding: 17, shadowColor: '#51396B', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.07, shadowRadius: 12, elevation: 2 },
-  formHeading: { alignItems: 'center', flexDirection: 'row', gap: 12, marginBottom: 20 },
-  avatar: { alignItems: 'center', backgroundColor: '#F1E5F7', borderRadius: 13, height: 45, justifyContent: 'center', width: 45 },
-  sellerAvatar: { backgroundColor: '#EAF3D8' },
-  avatarText: { color: palette.purple, fontSize: 23, fontWeight: '800' },
-  roleLabel: { color: '#54825D', fontSize: 10, fontWeight: '800', letterSpacing: 1.3, marginBottom: 2 },
+  formCard: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 18, borderWidth: 1, padding: 18, shadowColor: '#334331', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 2 },
+  formHeading: { alignItems: 'center', flexDirection: 'row', gap: 12, marginBottom: 22 },
+  avatar: { alignItems: 'center', backgroundColor: '#EEF2E8', borderRadius: 14, height: 48, justifyContent: 'center', width: 48 },
+  sellerAvatar: { backgroundColor: '#E5EDDB' },
+  roleLabel: { color: '#63834F', fontSize: 10, fontWeight: '800', letterSpacing: 1.3, marginBottom: 3 },
   formTitle: { color: palette.purpleDark, fontSize: 22, fontWeight: '700' },
   fieldLabel: { color: palette.text, fontSize: 13, fontWeight: '700', marginBottom: 8 },
   phoneRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 0 },
   phoneField: { flex: 1, marginBottom: 0 },
   phoneInput: { borderBottomLeftRadius: 0, borderTopLeftRadius: 0 },
-  countryCode: { alignItems: 'center', backgroundColor: '#F4EFF9', borderColor: palette.border, borderBottomLeftRadius: 13, borderTopLeftRadius: 13, borderWidth: 1, height: 52, justifyContent: 'center', marginTop: 0, width: 58 },
+  countryCode: { alignItems: 'center', backgroundColor: '#F1F3ED', borderColor: palette.border, borderBottomLeftRadius: 12, borderTopLeftRadius: 12, borderWidth: 1, height: 52, justifyContent: 'center', marginTop: 0, width: 58 },
   countryText: { color: palette.purple, fontSize: 14, fontWeight: '800' },
   termsRow: { alignItems: 'center', flexDirection: 'row', gap: 9, marginBottom: 12, marginTop: -3 },
-  checkbox: { alignItems: 'center', borderColor: '#C8C0CC', borderRadius: 5, borderWidth: 1.5, height: 19, justifyContent: 'center', width: 19 },
+  checkbox: { alignItems: 'center', borderColor: '#B9C1B5', borderRadius: 5, borderWidth: 1.5, height: 19, justifyContent: 'center', width: 19 },
   checkboxActive: { backgroundColor: palette.purple, borderColor: palette.purple },
   checkmark: { color: palette.white, fontSize: 13, fontWeight: '800' },
   termsText: { color: palette.text, fontSize: 12 },
