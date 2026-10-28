@@ -1,8 +1,17 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { loginSeller, registerSeller } from '@/services/seller-auth-api';
 import { Eyebrow, Field, PageHeading, PrimaryButton, Screen, palette } from '../shared/screen-ui';
+
+function getPasswordRequirements(password: string) {
+  const missing = [];
+  if (Array.from(password).length < 8) missing.push('al menos 8 caracteres');
+  if (!/\p{Lu}/u.test(password)) missing.push('una letra mayúscula');
+  if (!/[0-9]/.test(password)) missing.push('un número');
+  return missing;
+}
 
 export default function AuthScreen() {
   const router = useRouter();
@@ -13,28 +22,60 @@ export default function AuthScreen() {
   const [email, setEmail] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const missingPasswordRequirements = isRegistering && password.length > 0
+    ? getPasswordRequirements(password)
+    : [];
 
-  function continueToProfile() {
+  async function continueToProfile() {
     if (isSeller) {
-      if (isRegistering && businessName.trim().length < 2) {
-        setError('Escribe el nombre de tu negocio.');
-        return;
-      }
       if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
         setError('Escribe un correo electrónico válido.');
         return;
       }
-      if (password.length < 6) {
-        setError('La contraseña debe tener al menos 6 caracteres.');
+
+      if (isRegistering) {
+        if (businessName.trim().length < 2) {
+          setError('Escribe el nombre de tu negocio.');
+          return;
+        }
+        const missingRequirements = getPasswordRequirements(password);
+        if (missingRequirements.length > 0) {
+          setError(`La contraseña necesita:\n${missingRequirements.map((requirement) => `• ${requirement}`).join('\n')}.`);
+          return;
+        }
+        if (!accepted) {
+          setError('Acepta las normas para crear tu cuenta.');
+          return;
+        }
+      } else if (!password) {
+        setError('Escribe la contraseña de tu cuenta de vendedor.');
         return;
       }
-      if (isRegistering && !accepted) {
-        setError('Acepta las normas para crear tu cuenta.');
-        return;
+
+      setSubmitting(true);
+      setError('');
+      setSuccess('');
+      try {
+        if (isRegistering) {
+          await registerSeller(email.trim(), password, businessName.trim());
+          setPassword('');
+          setShowPassword(false);
+          setIsRegistering(false);
+          setSuccess('Cuenta creada. Inicia sesión con tu correo y contraseña.');
+        } else {
+          const seller = await loginSeller(email.trim(), password);
+          router.push({ pathname: '/profile', params: { role: 'seller', email: seller.email, businessName: seller.businessName } });
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : 'No se pudo validar la cuenta de vendedor.');
+      } finally {
+        setSubmitting(false);
       }
-      router.push({ pathname: '/profile', params: { role: 'seller', email: email.trim(), businessName: businessName.trim() } });
       return;
     }
 
@@ -69,9 +110,42 @@ export default function AuthScreen() {
 
         {isSeller ? (
           <>
-            {isRegistering ? <Field autoCapitalize="words" label="Nombre del negocio" onChangeText={setBusinessName} placeholder="Nombre comercial" value={businessName} /> : null}
+            {isRegistering ? <Field autoCapitalize="words" label="Nombre del negocio" onChangeText={setBusinessName} placeholder="Escribe el nombre de tu negocio" value={businessName} /> : null}
             <Field autoCapitalize="none" autoComplete="email" keyboardType="email-address" label="Correo electrónico" onChangeText={setEmail} placeholder="nombre@correo.com" value={email} />
-            <Field autoCapitalize="none" autoComplete={isRegistering ? 'new-password' : 'current-password'} label="Contraseña" onChangeText={setPassword} placeholder="Ingresa tu contraseña" secureTextEntry value={password} />
+            <View style={styles.passwordField}>
+              <Text style={styles.fieldLabel}>Contraseña</Text>
+              <View style={styles.passwordInputWrap}>
+                <TextInput
+                  autoCapitalize="none"
+                  autoComplete={isRegistering ? 'new-password' : 'current-password'}
+                  onChangeText={setPassword}
+                  placeholder="Ingresa tu contraseña"
+                  placeholderTextColor="#A39BA7"
+                  secureTextEntry={!showPassword}
+                  style={styles.passwordInput}
+                  value={password}
+                />
+              </View>
+              <Pressable
+                accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                accessibilityRole="button"
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.passwordVisibility}
+              >
+                <SymbolView
+                  name={{ ios: showPassword ? 'eye' : 'eye.slash', android: showPassword ? 'visibility' : 'visibility_off', web: showPassword ? 'visibility' : 'visibility_off' }}
+                  tintColor={palette.muted}
+                  size={19}
+                />
+              </Pressable>
+            </View>
+            {missingPasswordRequirements.length > 0 ? (
+              <View accessibilityLiveRegion="polite" style={styles.passwordRequirements}>
+                {missingPasswordRequirements.map((requirement) => (
+                  <Text key={requirement} style={styles.passwordRequirement}>• {requirement}</Text>
+                ))}
+              </View>
+            ) : null}
             {isRegistering ? (
               <Pressable onPress={() => setAccepted(!accepted)} style={styles.termsRow}>
                 <View style={[styles.checkbox, accepted && styles.checkboxActive]}>{accepted ? <Text style={styles.checkmark}>✓</Text> : null}</View>
@@ -101,15 +175,30 @@ export default function AuthScreen() {
         )}
 
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-        <PrimaryButton label={isRegistering ? 'Crear cuenta' : 'Iniciar sesión'} onPress={continueToProfile} />
+        {success ? <Text accessibilityRole="alert" style={styles.success}>{success}</Text> : null}
+        <PrimaryButton
+          disabled={submitting}
+          label={submitting ? 'Validando…' : isRegistering ? 'Crear cuenta' : 'Iniciar sesión'}
+          onPress={() => { void continueToProfile(); }}
+        />
+        {submitting ? <ActivityIndicator color={palette.purple} style={styles.spinner} /> : null}
         <View style={styles.divider} />
-        <Text style={styles.switchPrompt}>{isRegistering ? '¿Ya tienes una cuenta?' : '¿Aún no tienes cuenta?'}</Text>
-        <Pressable onPress={() => { setError(''); setIsRegistering(!isRegistering); }}>
-          <Text style={styles.switchLink}>{isRegistering ? 'Iniciar sesión' : 'Registrarme'}</Text>
+        <Text style={styles.switchPrompt}>{isRegistering ? '¿Ya tienes una cuenta?' : '¿Aún no tienes una cuenta?'}</Text>
+        <Pressable
+          disabled={submitting}
+          onPress={() => {
+            setError('');
+            setSuccess('');
+            setPassword('');
+            setShowPassword(false);
+            setIsRegistering(!isRegistering);
+          }}
+        >
+          <Text style={styles.switchLink}>{isRegistering ? 'Iniciar sesión' : 'Regístrate'}</Text>
         </Pressable>
         <Text style={styles.privacy}>◉  Solo usamos tus datos para identificar tu cuenta.</Text>
       </View>
-      <Text style={styles.note}>Prototipo visual: el acceso aún no está conectado a un servicio de autenticación.</Text>
+      <Text style={styles.note}>{isSeller ? 'El registro y el inicio de sesión se validan en el servidor.' : 'Para comercios salvadoreños'}</Text>
     </Screen>
   );
 }
@@ -136,6 +225,14 @@ const styles = StyleSheet.create({
   checkmark: { color: palette.white, fontSize: 13, fontWeight: '800' },
   termsText: { color: palette.text, fontSize: 12 },
   error: { color: '#B23B45', fontSize: 12, marginTop: -4 },
+  success: { color: '#477344', fontSize: 12, lineHeight: 18, marginTop: 2 },
+  passwordField: { marginBottom: 16, position: 'relative' },
+  passwordInputWrap: { justifyContent: 'center' },
+  passwordInput: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 11, borderWidth: 1, color: palette.text, fontSize: 15, minHeight: 48, paddingHorizontal: 13, paddingRight: 48 },
+  passwordVisibility: { alignItems: 'center', borderColor: 'transparent', borderRadius: 8, borderWidth: 0, elevation: 0, height: 48, justifyContent: 'center', outlineColor: 'transparent', outlineStyle: 'solid', outlineWidth: 0, position: 'absolute', right: 4, shadowColor: 'transparent', shadowOpacity: 0, shadowRadius: 0, top: 25, width: 40 },
+  passwordRequirements: { marginBottom: 12, marginTop: -10 },
+  passwordRequirement: { color: '#B23B45', fontSize: 11, lineHeight: 16 },
+  spinner: { marginTop: 10 },
   divider: { backgroundColor: palette.border, height: 1, marginVertical: 14 },
   switchPrompt: { color: palette.muted, fontSize: 12, textAlign: 'center' },
   switchLink: { color: palette.purple, fontSize: 13, fontWeight: '800', marginTop: 5, textAlign: 'center' },

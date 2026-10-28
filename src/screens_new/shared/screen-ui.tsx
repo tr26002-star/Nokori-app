@@ -31,23 +31,25 @@ const bottomNavItems = [
   { route: '/profile', label: 'Perfil', ios: 'person.crop.circle.fill', icon: 'account_circle' },
 ] as const;
 
-export function Screen({ children, contentStyle, showBottomNav = false }: { children: ReactNode; contentStyle?: ViewStyle; showBottomNav?: boolean }) {
+export function Screen({ children, contentStyle, showBottomNav = false, showBrand = true, showDecorations = true }: { children: ReactNode; contentStyle?: ViewStyle; showBottomNav?: boolean; showBrand?: boolean; showDecorations?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View pointerEvents="none" style={styles.lavenderShape} />
-      <View pointerEvents="none" style={styles.greenShape} />
+      {showDecorations ? <View pointerEvents="none" style={styles.lavenderShape} /> : null}
+      {showDecorations ? <View pointerEvents="none" style={styles.greenShape} /> : null}
       <ScrollView
         contentContainerStyle={[styles.content, showBottomNav && styles.contentWithNav, contentStyle]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.brandRow}>
-          <View style={styles.brandMark}><SymbolView name={{ ios: 'leaf.fill', android: 'eco', web: 'eco' }} tintColor={palette.white} size={18} /></View>
-          <Text style={styles.brandName}>Nokory</Text>
-        </View>
+        {showBrand ? (
+          <View style={styles.brandRow}>
+            <View style={styles.brandMark}><SymbolView name={{ ios: 'leaf.fill', android: 'eco', web: 'eco' }} tintColor={palette.white} size={18} /></View>
+            <Text style={styles.brandName}>Nokory</Text>
+          </View>
+        ) : null}
         {children}
       </ScrollView>
       {showBottomNav ? (

@@ -1,15 +1,19 @@
 import { createServer } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 const backendDir = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(backendDir, 'data');
 const uploadsDir = path.join(backendDir, 'uploads');
 const productsFile = path.join(dataDir, 'products.json');
+const sellersFile = path.join(dataDir, 'sellers.json');
 const port = Number(process.env.PORT || 4000);
 const maxRequestBytes = 6_000_000;
+const passwordHashBytes = 64;
+const derivePassword = promisify(scrypt);
 const allowedImages = new Map([
   ['image/jpeg', 'jpg'],
   ['image/png', 'png'],
@@ -17,6 +21,7 @@ const allowedImages = new Map([
 ]);
 
 let writeQueue = Promise.resolve();
+let sellerWriteQueue = Promise.resolve();
 
 await mkdir(dataDir, { recursive: true });
 await mkdir(uploadsDir, { recursive: true });
@@ -25,6 +30,12 @@ try {
 } catch (error) {
   if (error.code !== 'ENOENT') throw error;
   await writeFile(productsFile, '[]\n', 'utf8');
+}
+try {
+  await readFile(sellersFile, 'utf8');
+} catch (error) {
+  if (error.code !== 'ENOENT') throw error;
+  await writeFile(sellersFile, '[]\n', 'utf8');
 }
 
 function send(response, status, payload, extraHeaders = {}) {
@@ -76,6 +87,38 @@ function updateProducts(mutator) {
   return task;
 }
 
+async function readSellers() {
+  const contents = await readFile(sellersFile, 'utf8');
+  const rows = JSON.parse(contents);
+  if (!Array.isArray(rows)) throw new Error('El archivo de cuentas de vendedor no tiene un formato válido.');
+  return rows;
+}
+
+function updateSellers(mutator) {
+  const task = sellerWriteQueue.then(async () => {
+    const sellers = await readSellers();
+    const result = mutator(sellers);
+    const temporaryFile = `${sellersFile}.${randomUUID()}.tmp`;
+    await writeFile(temporaryFile, `${JSON.stringify(sellers, null, 2)}\n`, 'utf8');
+    await rename(temporaryFile, sellersFile);
+    return result;
+  });
+  sellerWriteQueue = task.catch(() => undefined);
+  return task;
+}
+
+async function hashPassword(password, salt) {
+  return derivePassword(password, salt, passwordHashBytes);
+}
+
+function passwordRequirementError(password) {
+  const missing = [];
+  if (Array.from(password).length < 8) missing.push('al menos 8 caracteres');
+  if (!/\p{Lu}/u.test(password)) missing.push('una letra mayúscula');
+  if (!/[0-9]/.test(password)) missing.push('un número');
+  return missing.length ? `La contraseña debe tener ${missing.join(', ')}.` : null;
+}
+
 async function serveUpload(request, response, pathname) {
   const filename = path.basename(pathname.slice('/uploads/'.length));
   if (!/^[a-f0-9-]+\.(jpg|png|webp)$/i.test(filename)) {
@@ -123,6 +166,75 @@ const server = createServer(async (request, response) => {
         .filter((product) => product.isActive !== false)
         .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
       send(response, 200, { products });
+      return;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/seller/register') {
+      const payload = await readJson(request);
+      if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        sendError(response, 400, 'Envía el correo, nombre del negocio y contraseña.');
+        return;
+      }
+
+      const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+      const businessName = typeof payload.businessName === 'string' ? payload.businessName.trim() : '';
+      const password = typeof payload.password === 'string' ? payload.password : '';
+      if (!/^\S+@\S+\.\S+$/.test(email)) {
+        sendError(response, 400, 'Escribe un correo electrónico válido.');
+        return;
+      }
+      if (businessName.length < 2) {
+        sendError(response, 400, 'Escribe el nombre de tu negocio.');
+        return;
+      }
+      const passwordError = passwordRequirementError(password);
+      if (passwordError) {
+        sendError(response, 400, passwordError);
+        return;
+      }
+
+      const salt = randomBytes(16).toString('hex');
+      const passwordHash = (await hashPassword(password, salt)).toString('hex');
+      const created = await updateSellers((sellers) => {
+        if (sellers.some((seller) => seller.email === email)) return false;
+        sellers.push({
+          email,
+          businessName,
+          passwordSalt: salt,
+          passwordHash,
+          createdAt: new Date().toISOString(),
+        });
+        return true;
+      });
+      if (!created) {
+        sendError(response, 409, 'Ya existe una cuenta de vendedor con ese correo.');
+        return;
+      }
+      send(response, 201, { seller: { email, businessName } });
+      return;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/seller/login') {
+      const payload = await readJson(request);
+      if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        sendError(response, 400, 'Escribe el correo y la contraseña de tu cuenta de vendedor.');
+        return;
+      }
+
+      const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+      const password = typeof payload.password === 'string' ? payload.password : '';
+      await sellerWriteQueue;
+      const seller = (await readSellers()).find((account) => account.email === email);
+      const salt = seller?.passwordSalt || 'nokory-missing-seller-account';
+      const expectedHash = seller ? Buffer.from(seller.passwordHash, 'hex') : Buffer.alloc(passwordHashBytes);
+      const suppliedHash = await hashPassword(password, salt);
+      const passwordMatches = expectedHash.length === passwordHashBytes
+        && timingSafeEqual(suppliedHash, expectedHash);
+      if (!seller || !passwordMatches) {
+        sendError(response, 401, 'El correo o la contraseña no corresponden a una cuenta de vendedor.');
+        return;
+      }
+      send(response, 200, { seller: { email: seller.email, businessName: seller.businessName } });
       return;
     }
 

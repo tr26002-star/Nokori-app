@@ -1,6 +1,6 @@
 # API local de Nokory
 
-Esta API guarda las publicaciones en `backend/data/products.json` y las fotos en `backend/uploads/`. El servidor debe permanecer encendido para que los otros teléfonos puedan ver las publicaciones. Esta configuración está pensada para una demostración con equipos conectados a la misma red Wi‑Fi.
+Esta API guarda las publicaciones en `backend/data/products.json`, las cuentas de vendedor en `backend/data/sellers.json` y las fotos en `backend/uploads/`. Las contraseñas de vendedor se guardan como hashes scrypt con salt aleatorio, nunca en texto plano. El servidor debe permanecer encendido para que los otros teléfonos puedan ver las publicaciones y autenticar vendedores. Esta configuración está pensada para una demostración con equipos conectados a la misma red Wi‑Fi.
 
 ## Iniciar el servidor
 
@@ -40,8 +40,10 @@ No uses `localhost` en `.env`: en cada teléfono, `localhost` apuntaría al prop
 - `GET /api/products`: devuelve las publicaciones compartidas.
 - `POST /api/products`: guarda un producto.
 - `POST /api/uploads`: guarda una foto JPEG, PNG o WebP y devuelve su URL.
+- `POST /api/seller/register`: valida los datos y registra una cuenta de vendedor.
+- `POST /api/seller/login`: valida las credenciales de una cuenta de vendedor ya registrada.
 - `GET /uploads/:archivo`: entrega una foto guardada.
 
-Explorar consulta la API cada cinco segundos. Los datos y las fotos permanecen en la computadora del servidor. Haz una copia de `backend/data/products.json` y `backend/uploads/` si quieres conservarlos fuera de esa computadora.
+Explorar consulta la API cada cinco segundos. Los datos, las cuentas y las fotos permanecen en la computadora del servidor. Haz una copia de `backend/data/products.json`, `backend/data/sellers.json` y `backend/uploads/` si quieres conservarlos fuera de esa computadora.
 
-Esta API local no requiere cuentas ni claves y funciona cuando todos los dispositivos alcanzan la computadora por la red. Para que personas desde cualquier red del Internet la usen, habrá que alojar el servidor en un servicio público con almacenamiento persistente y agregar autenticación antes de abrir escrituras al público.
+El registro e inicio de sesión de vendedor requieren conexión con esta API local. Este prototipo valida las credenciales mediante el servidor; antes de exponerlo a Internet se necesita alojamiento público con almacenamiento persistente, HTTPS, sesiones protegidas y controles de acceso para las escrituras.

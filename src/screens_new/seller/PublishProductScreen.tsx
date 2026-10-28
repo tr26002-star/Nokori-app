@@ -2,12 +2,37 @@ import { createProduct } from '@/services/products-api';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Eyebrow, Field, PageHeading, PrimaryButton, Screen, palette } from '../shared/screen-ui';
+import { useState, type ReactNode } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type TextInputProps,
+} from 'react-native';
+import { Screen, palette } from '../shared/screen-ui';
 
 const categories = ['Panadería', 'Pupusería', 'Comida preparada', 'Postres', 'Otros'];
 type SelectedPhoto = { uri: string; base64: string; mimeType: string };
+
+function FormField({ label, children, style, ...inputProps }: TextInputProps & { label: string; children?: ReactNode }) {
+  return (
+    <View style={styles.fieldGroup}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.inputWrap}>
+        <TextInput
+          placeholderTextColor="#A39BA7"
+          style={[styles.input, children ? styles.inputWithIcon : undefined, style]}
+          {...inputProps}
+        />
+        {children}
+      </View>
+    </View>
+  );
+}
 
 export default function PublishProductScreen() {
   const router = useRouter();
@@ -16,10 +41,12 @@ export default function PublishProductScreen() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState(categories[0]);
-  const [price, setPrice] = useState('');
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [normalPrice, setNormalPrice] = useState('');
+  const [rescuePrice, setRescuePrice] = useState('');
   const [quantity, setQuantity] = useState('1');
-  const [pickupStart, setPickupStart] = useState('16:00');
-  const [pickupEnd, setPickupEnd] = useState('18:00');
+  const [expiryDate, setExpiryDate] = useState('');
+  const [pickupSchedule, setPickupSchedule] = useState('Hoy, 16:00 - 20:00');
   const [photo, setPhoto] = useState<SelectedPhoto | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -48,12 +75,13 @@ export default function PublishProductScreen() {
   }
 
   async function publish() {
-    const numericPrice = Number(price.replace(',', '.'));
+    const numericPrice = Number(rescuePrice.replace(',', '.'));
     const numericQuantity = Number(quantity);
+    const pickupTimes = pickupSchedule.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
     if (name.trim().length < 3) return setError('Escribe el nombre del producto o pack.');
-    if (!Number.isFinite(numericPrice) || numericPrice <= 0) return setError('Ingresa un precio mayor que cero.');
+    if (!Number.isFinite(numericPrice) || numericPrice <= 0) return setError('Ingresa un precio de rescate mayor que cero.');
     if (!Number.isInteger(numericQuantity) || numericQuantity < 1) return setError('La cantidad debe ser al menos una unidad.');
-    if (!pickupStart.trim() || !pickupEnd.trim()) return setError('Indica el horario de recogida.');
+    if (!pickupTimes) return setError('Indica el horario de recogida en formato HH:MM - HH:MM.');
     setSaving(true);
     setError('');
     try {
@@ -63,8 +91,8 @@ export default function PublishProductScreen() {
         category,
         price: numericPrice,
         quantity: numericQuantity,
-        pickupStart: pickupStart.trim(),
-        pickupEnd: pickupEnd.trim(),
+        pickupStart: pickupTimes[1],
+        pickupEnd: pickupTimes[2],
         sellerName,
         photo: photo ? { base64: photo.base64, mimeType: photo.mimeType } : null,
       });
@@ -77,65 +105,185 @@ export default function PublishProductScreen() {
   }
 
   return (
-    <Screen showBottomNav>
-      <Eyebrow>Panel del negocio</Eyebrow>
-      <PageHeading title="Publica un pack" description="Tu publicación se guardará en la API y aparecerá en Explorar en los demás dispositivos." />
-      <Field autoCapitalize="sentences" label="Nombre del producto" onChangeText={setName} placeholder="Ej. Pack sorpresa del día" value={name} />
-      <Text style={styles.label}>Categoría</Text>
-      <View style={styles.categories}>
-        {categories.map((item) => (
-          <Pressable key={item} onPress={() => setCategory(item)} style={[styles.categoryChip, category === item && styles.categoryChipActive]}>
-            <Text style={[styles.categoryChipText, category === item && styles.categoryChipTextActive]}>{item}</Text>
-          </Pressable>
-        ))}
-      </View>
-      <Field autoCapitalize="sentences" label="Descripción" multiline onChangeText={setDescription} placeholder="¿Qué incluye el pack?" style={styles.multiline} value={description} />
-      <View style={styles.twoColumns}>
-        <Field containerStyle={styles.column} keyboardType="decimal-pad" label="Precio (USD)" onChangeText={setPrice} placeholder="4.50" value={price} />
-        <Field containerStyle={styles.column} keyboardType="number-pad" label="Cantidad" onChangeText={setQuantity} placeholder="1" value={quantity} />
-      </View>
-      <View style={styles.twoColumns}>
-        <Field autoCapitalize="none" containerStyle={styles.column} label="Recogida desde" onChangeText={setPickupStart} placeholder="16:00" value={pickupStart} />
-        <Field autoCapitalize="none" containerStyle={styles.column} label="Recogida hasta" onChangeText={setPickupEnd} placeholder="18:00" value={pickupEnd} />
-      </View>
-      <Text style={styles.label}>Foto del producto</Text>
-      {photo ? (
-        <View style={styles.photoPreviewWrap}>
-          <Image source={{ uri: photo.uri }} style={styles.photoPreview} />
-          <Pressable accessibilityRole="button" onPress={() => setPhoto(null)} style={styles.removePhoto}><Text style={styles.removePhotoText}>Quitar foto</Text></Pressable>
+    <Screen contentStyle={styles.screenContent} showBottomNav showBrand={false} showDecorations={false}>
+      <View style={styles.header}>
+        <View style={styles.headerCopy}>
+          <Text style={styles.headerEyebrow}>NUEVA PUBLICACIÓN</Text>
+          <Text style={styles.headerTitle}>Publica un producto</Text>
         </View>
-      ) : (
-        <Pressable accessibilityRole="button" onPress={() => { void choosePhoto(); }} style={styles.photoButton}>
-          <SymbolView name={{ ios: 'photo.badge.plus', android: 'add_photo_alternate', web: 'add_photo_alternate' }} tintColor={palette.purple} size={22} />
-          <Text style={styles.photoButtonText}>Elegir foto de la galería</Text>
+        <Pressable
+          accessibilityLabel="Cerrar nueva publicación"
+          accessibilityRole="button"
+          onPress={() => router.canGoBack() ? router.back() : router.replace('/explore')}
+          style={styles.closeButton}
+        >
+          <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} tintColor={palette.purpleDark} size={14} />
         </Pressable>
-      )}
-      <View style={styles.infoBox}><Text style={styles.infoText}>Negocio: {sellerName}. La foto se subirá al almacenamiento compartido para verla desde otros teléfonos.</Text></View>
+      </View>
+
+      <View style={styles.photoUpload}>
+        {photo ? (
+          <Image source={{ uri: photo.uri }} style={styles.photoPreview} />
+        ) : (
+          <View style={styles.photoPrompt}>
+            <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} tintColor={palette.purple} size={19} />
+            <Text style={styles.photoPromptText}>Agrega una foto real del producto</Text>
+          </View>
+        )}
+        <Pressable accessibilityRole="button" onPress={() => { void choosePhoto(); }} style={styles.addPhotoButton}>
+          <SymbolView name={{ ios: 'pencil', android: 'edit', web: 'edit' }} tintColor={palette.white} size={12} />
+          <Text style={styles.addPhotoText}>Agregar foto</Text>
+        </Pressable>
+      </View>
+
+      <FormField
+        autoCapitalize="sentences"
+        label="Nombre del producto"
+        onChangeText={setName}
+        placeholder="Ej. Pack sorpresa"
+        value={name}
+      />
+
+      <View style={styles.fieldGroup}>
+        <Text style={styles.label}>Categoría</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: categoryOpen }}
+          onPress={() => setCategoryOpen(!categoryOpen)}
+          style={styles.selectButton}
+        >
+          <Text style={styles.selectText}>{category}</Text>
+          <SymbolView name={{ ios: 'chevron.down', android: 'keyboard_arrow_down', web: 'keyboard_arrow_down' }} tintColor={palette.text} size={17} />
+        </Pressable>
+        {categoryOpen ? (
+          <View style={styles.categoryOptions}>
+            {categories.map((item) => (
+              <Pressable
+                accessibilityRole="button"
+                key={item}
+                onPress={() => {
+                  setCategory(item);
+                  setCategoryOpen(false);
+                }}
+                style={styles.categoryOption}
+              >
+                <Text style={[styles.selectText, item === category && styles.selectedCategory]}>{item}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.notice}>
+        <Text style={styles.noticeText}>Solo se permiten alimentos y bebidas aptos para consumo.</Text>
+      </View>
+
+      <FormField
+        keyboardType="decimal-pad"
+        label="Precio normal (USD)"
+        onChangeText={setNormalPrice}
+        placeholder=""
+        value={normalPrice}
+      >
+        <SymbolView name={{ ios: 'arrow.up.arrow.down', android: 'unfold_more', web: 'unfold_more' }} tintColor="#827A86" size={16} style={styles.trailingIcon} />
+      </FormField>
+
+      <FormField
+        keyboardType="decimal-pad"
+        label="Precio rescate (USD)"
+        onChangeText={setRescuePrice}
+        placeholder=""
+        value={rescuePrice}
+      />
+
+      <FormField
+        keyboardType="number-pad"
+        label="Cantidad disponible"
+        onChangeText={setQuantity}
+        placeholder="1"
+        value={quantity}
+      />
+
+      <FormField
+        autoCapitalize="none"
+        label="Vencimiento"
+        onChangeText={setExpiryDate}
+        placeholder="mm/dd/yyyy"
+        value={expiryDate}
+      >
+        <SymbolView name={{ ios: 'calendar', android: 'calendar_month', web: 'calendar_month' }} tintColor={palette.text} size={15} style={styles.trailingIcon} />
+      </FormField>
+
+      <FormField
+        autoCapitalize="none"
+        label="Horario de recogida"
+        onChangeText={setPickupSchedule}
+        placeholder="Hoy, 16:00 - 20:00"
+        value={pickupSchedule}
+      />
+
+      <FormField
+        autoCapitalize="sentences"
+        label="Descripción"
+        multiline
+        onChangeText={setDescription}
+        placeholder="Describe qué puede recibir el cliente"
+        style={styles.multiline}
+        value={description}
+      />
+
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <PrimaryButton disabled={saving} label={saving ? 'Publicando…' : 'Publicar para todos'} onPress={() => { void publish(); }} />
-      {saving ? <ActivityIndicator color={palette.purple} style={styles.spinner} /> : null}
+      <View style={styles.actions}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: saving }}
+          disabled={saving}
+          onPress={() => { void publish(); }}
+          style={[styles.publishButton, saving && styles.disabledButton]}
+        >
+          {saving ? <ActivityIndicator color={palette.white} size="small" /> : <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} tintColor={palette.white} size={14} />}
+          <Text style={styles.publishText}>{saving ? 'Publicando…' : 'Publicar producto'}</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" onPress={() => router.canGoBack() ? router.back() : router.replace('/explore')} style={styles.cancelButton}>
+          <Text style={styles.cancelText}>Cancelar</Text>
+        </Pressable>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  label: { color: palette.text, fontSize: 14, fontWeight: '700', marginBottom: 9 },
-  categories: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 15 },
-  categoryChip: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 11, borderWidth: 1, paddingHorizontal: 11, paddingVertical: 8 },
-  categoryChipActive: { backgroundColor: '#E8EFE0', borderColor: palette.purple },
-  categoryChipText: { color: palette.muted, fontSize: 11, fontWeight: '600' },
-  categoryChipTextActive: { color: palette.purple, fontWeight: '800' },
-  multiline: { height: 86, paddingTop: 12, textAlignVertical: 'top' },
-  twoColumns: { flexDirection: 'row', gap: 12 },
-  column: { flex: 1 },
-  photoButton: { alignItems: 'center', backgroundColor: palette.white, borderColor: '#CCD4C5', borderRadius: 13, borderStyle: 'dashed', borderWidth: 1.5, flexDirection: 'row', gap: 10, justifyContent: 'center', minHeight: 62 },
-  photoButtonText: { color: palette.purple, fontSize: 12, fontWeight: '800' },
-  photoPreviewWrap: { borderRadius: 15, overflow: 'hidden' },
-  photoPreview: { backgroundColor: '#EAF3D8', height: 170, width: '100%' },
-  removePhoto: { alignItems: 'center', backgroundColor: '#FFF0F0', minHeight: 38, justifyContent: 'center' },
-  removePhotoText: { color: '#B64D55', fontSize: 12, fontWeight: '700' },
-  infoBox: { backgroundColor: '#EAF3D8', borderRadius: 14, marginTop: 2, padding: 12 },
-  infoText: { color: '#4F7054', fontSize: 11, lineHeight: 17 },
-  error: { color: '#B23B45', fontSize: 12, lineHeight: 18, marginTop: 10 },
-  spinner: { marginTop: 10 },
+  screenContent: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 20 },
+  header: { alignItems: 'center', borderBottomColor: '#F0EAF2', borderBottomWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16, paddingBottom: 14 },
+  headerCopy: { flex: 1 },
+  headerEyebrow: { color: palette.green, fontSize: 10, fontWeight: '800', letterSpacing: 1.1, marginBottom: 7 },
+  headerTitle: { color: palette.purpleDark, fontSize: 20, fontWeight: '600' },
+  closeButton: { alignItems: 'center', backgroundColor: '#F5ECFB', borderRadius: 18, height: 36, justifyContent: 'center', marginLeft: 10, width: 36 },
+  photoUpload: { alignItems: 'center', backgroundColor: '#F7EEFC', borderColor: '#D9C6E8', borderRadius: 12, borderStyle: 'dashed', borderWidth: 1, height: 126, justifyContent: 'center', marginBottom: 14, overflow: 'hidden' },
+  photoPreview: { height: '100%', position: 'absolute', width: '100%' },
+  photoPrompt: { alignItems: 'center', gap: 3, marginTop: -23 },
+  photoPromptText: { color: palette.purple, fontSize: 10, fontWeight: '700' },
+  addPhotoButton: { alignItems: 'center', backgroundColor: palette.purpleDark, borderRadius: 7, bottom: 8, flexDirection: 'row', gap: 5, paddingHorizontal: 9, paddingVertical: 6, position: 'absolute', right: 9 },
+  addPhotoText: { color: palette.white, fontSize: 9, fontWeight: '700' },
+  fieldGroup: { marginBottom: 9 },
+  label: { color: palette.purpleDark, fontSize: 11, fontWeight: '700', marginBottom: 5 },
+  inputWrap: { justifyContent: 'center' },
+  input: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 9, borderWidth: 1, color: palette.text, fontSize: 12, minHeight: 39, paddingHorizontal: 11, paddingVertical: 7 },
+  inputWithIcon: { paddingRight: 33 },
+  trailingIcon: { position: 'absolute', right: 10 },
+  selectButton: { alignItems: 'center', backgroundColor: palette.white, borderColor: palette.border, borderRadius: 9, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', minHeight: 39, paddingHorizontal: 11 },
+  selectText: { color: palette.text, fontSize: 12 },
+  categoryOptions: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 9, borderWidth: 1, marginTop: 3, overflow: 'hidden' },
+  categoryOption: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 11 },
+  selectedCategory: { color: palette.purple, fontWeight: '700' },
+  notice: { backgroundColor: '#EEF7DB', borderRadius: 8, justifyContent: 'center', marginBottom: 10, minHeight: 30, paddingHorizontal: 9 },
+  noticeText: { color: '#557946', fontSize: 9, fontWeight: '600' },
+  multiline: { height: 72, paddingTop: 10, textAlignVertical: 'top' },
+  error: { color: '#B23B45', fontSize: 11, lineHeight: 16, marginBottom: 7 },
+  actions: { borderTopColor: palette.border, borderTopWidth: 1, marginTop: 1, paddingTop: 10 },
+  publishButton: { alignItems: 'center', backgroundColor: '#41166B', borderRadius: 10, flexDirection: 'row', gap: 8, justifyContent: 'center', minHeight: 44 },
+  publishText: { color: palette.white, fontSize: 13, fontWeight: '800' },
+  disabledButton: { opacity: 0.7 },
+  cancelButton: { alignItems: 'center', backgroundColor: '#F5ECFB', borderRadius: 10, justifyContent: 'center', marginTop: 7, minHeight: 42 },
+  cancelText: { color: palette.purpleDark, fontSize: 13, fontWeight: '700' },
 });

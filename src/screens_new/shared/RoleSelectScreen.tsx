@@ -52,7 +52,7 @@ export default function RoleSelectScreen() {
           </Pressable>
         ))}
       </View>
-      <Text style={styles.footnote}>Prototipo para comercios salvadoreños · Puedes cambiar de rol en tu perfil.</Text>
+      <Text style={styles.footnote}>Para comercios salvadoreños</Text>
     </Screen>
   );
 }

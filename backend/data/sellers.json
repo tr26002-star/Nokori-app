@@ -1,0 +1,16 @@
+[
+  {
+    "email": "ilianarivas007@gmail.com",
+    "businessName": "Dulce Tentación",
+    "passwordSalt": "fa38f58e9a3952b5581cbe461ae6a626",
+    "passwordHash": "8c22dba8a8111a9653be0e6f242e2956b107604d52c8fd99a5a2760264c09696c37135c66a132e247377c4c92edc98c16edb538c379563fb4a207c62a2e50652",
+    "createdAt": "2026-10-28T05:39:45.391Z"
+  },
+  {
+    "email": "trejosrosmery196@gmail.com",
+    "businessName": "Dulce Tentación",
+    "passwordSalt": "89accdfd4e50d9bbcb51a62e6ef96f0b",
+    "passwordHash": "ac4ab29c9f236db26d8835c73b6d4f806db531dbd05b6e4294a43c544bc15ab3397468187b26e4db33c79a1c9396c2c6c4c1b9009804b648f00c5a1add37d41e",
+    "createdAt": "2026-10-28T05:46:08.638Z"
+  }
+]
