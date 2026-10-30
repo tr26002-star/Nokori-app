@@ -1,4 +1,4 @@
-import { usePathname, useRouter } from 'expo-router';
+import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import type { ReactNode } from 'react';
 import {
@@ -25,15 +25,35 @@ export const palette = {
   palePurple: '#F3EAF7',
 };
 
-const bottomNavItems = [
+const sellerBottomNavItems = [
   { route: '/explore', label: 'Productos', ios: 'shippingbox.fill', icon: 'inventory_2' },
-  { route: '/publish', label: 'Publicar', ios: 'plus.square.fill', icon: 'add_box' },
+  { route: '/reservations', label: 'Reservas', ios: 'ticket.fill', icon: 'confirmation_number' },
+  { route: '/profile', label: 'Perfil', ios: 'person.crop.circle.fill', icon: 'account_circle' },
+] as const;
+
+const clientBottomNavItems = [
+  { route: '/explore', label: 'Explorar', ios: 'safari.fill', icon: 'explore' },
+  { route: '/reservations', label: 'Reservas', ios: 'ticket.fill', icon: 'confirmation_number' },
   { route: '/profile', label: 'Perfil', ios: 'person.crop.circle.fill', icon: 'account_circle' },
 ] as const;
 
 export function Screen({ children, contentStyle, showBottomNav = false, showBrand = true, showDecorations = true }: { children: ReactNode; contentStyle?: ViewStyle; showBottomNav?: boolean; showBrand?: boolean; showDecorations?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { role, phone, email, businessName } = useLocalSearchParams<{
+    role?: string;
+    phone?: string;
+    email?: string;
+    businessName?: string;
+  }>();
+  const isSeller = role === 'seller';
+  const bottomNavItems = isSeller ? sellerBottomNavItems : clientBottomNavItems;
+  const navigationParams = {
+    role: isSeller ? 'seller' : 'client',
+    ...(typeof phone === 'string' ? { phone } : {}),
+    ...(typeof email === 'string' ? { email } : {}),
+    ...(typeof businessName === 'string' ? { businessName } : {}),
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -61,8 +81,8 @@ export function Screen({ children, contentStyle, showBottomNav = false, showBran
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
                 key={item.route}
-                onPress={() => router.replace(item.route)}
-                style={styles.navItem}
+                onPress={() => router.replace({ pathname: item.route, params: navigationParams })}
+                style={[styles.navItem, active && styles.navItemActive]}
               >
                 <SymbolView
                   name={{ ios: item.ios, android: item.icon, web: item.icon }}
@@ -156,6 +176,7 @@ const styles = StyleSheet.create({
   input: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 11, borderWidth: 1, color: palette.text, fontSize: 15, minHeight: 48, paddingHorizontal: 13 },
   bottomNav: { alignSelf: 'center', backgroundColor: palette.white, borderColor: palette.border, borderRadius: 16, borderWidth: 1, elevation: 3, flexDirection: 'row', justifyContent: 'space-around', marginBottom: 6, maxWidth: 520, minHeight: 62, paddingHorizontal: 7, paddingVertical: 6, shadowColor: '#493354', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 8, width: '94%' },
   navItem: { alignItems: 'center', borderRadius: 11, flex: 1, gap: 3, justifyContent: 'center' },
+  navItemActive: { backgroundColor: palette.palePurple },
   navLabel: { color: palette.muted, fontSize: 10, fontWeight: '600' },
   navLabelActive: { color: palette.purpleDark, fontWeight: '800' },
 });

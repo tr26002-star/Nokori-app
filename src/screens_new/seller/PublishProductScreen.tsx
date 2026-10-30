@@ -36,8 +36,16 @@ function FormField({ label, children, style, ...inputProps }: TextInputProps & {
 
 export default function PublishProductScreen() {
   const router = useRouter();
-  const { sellerName: sellerNameParam } = useLocalSearchParams<{ sellerName?: string }>();
-  const sellerName = typeof sellerNameParam === 'string' && sellerNameParam.trim() ? sellerNameParam.trim() : 'Negocio Nokory';
+  const { role, email, businessName } = useLocalSearchParams<{
+    role?: string;
+    email?: string;
+    businessName?: string;
+  }>();
+  const exploreParams = {
+    role: role === 'seller' ? 'seller' : 'client',
+    ...(typeof email === 'string' ? { email } : {}),
+    ...(typeof businessName === 'string' ? { businessName } : {}),
+  };
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState(categories[0]);
@@ -93,10 +101,9 @@ export default function PublishProductScreen() {
         quantity: numericQuantity,
         pickupStart: pickupTimes[1],
         pickupEnd: pickupTimes[2],
-        sellerName,
         photo: photo ? { base64: photo.base64, mimeType: photo.mimeType } : null,
       });
-      router.replace('/explore');
+      router.replace({ pathname: '/explore', params: exploreParams });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo publicar el producto.');
     } finally {
@@ -114,7 +121,7 @@ export default function PublishProductScreen() {
         <Pressable
           accessibilityLabel="Cerrar nueva publicación"
           accessibilityRole="button"
-          onPress={() => router.canGoBack() ? router.back() : router.replace('/explore')}
+          onPress={() => router.canGoBack() ? router.back() : router.replace({ pathname: '/explore', params: exploreParams })}
           style={styles.closeButton}
         >
           <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} tintColor={palette.purpleDark} size={14} />
@@ -244,7 +251,7 @@ export default function PublishProductScreen() {
           {saving ? <ActivityIndicator color={palette.white} size="small" /> : <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} tintColor={palette.white} size={14} />}
           <Text style={styles.publishText}>{saving ? 'Publicando…' : 'Publicar producto'}</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" onPress={() => router.canGoBack() ? router.back() : router.replace('/explore')} style={styles.cancelButton}>
+        <Pressable accessibilityRole="button" onPress={() => router.canGoBack() ? router.back() : router.replace({ pathname: '/explore', params: exploreParams })} style={styles.cancelButton}>
           <Text style={styles.cancelText}>Cancelar</Text>
         </Pressable>
       </View>

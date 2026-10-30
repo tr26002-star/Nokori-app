@@ -62,14 +62,28 @@ export default function AuthScreen() {
       setSuccess('');
       try {
         if (isRegistering) {
-          await registerSeller(email.trim(), password, businessName.trim());
+          const result = await registerSeller(email.trim(), password, businessName.trim());
           setPassword('');
           setShowPassword(false);
-          setIsRegistering(false);
-          setSuccess('Cuenta creada. Inicia sesión con tu correo y contraseña.');
+          if (result.emailConfirmationRequired) {
+            setIsRegistering(false);
+            setSuccess('Cuenta creada. Confirma tu correo y luego inicia sesión.');
+          } else {
+            router.push({
+              pathname: '/profile',
+              params: {
+                role: 'seller',
+                email: result.account.email,
+                businessName: result.account.businessName,
+              },
+            });
+          }
         } else {
           const seller = await loginSeller(email.trim(), password);
-          router.push({ pathname: '/profile', params: { role: 'seller', email: seller.email, businessName: seller.businessName } });
+          router.push({
+            pathname: '/profile',
+            params: { role: 'seller', email: seller.email, businessName: seller.businessName },
+          });
         }
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'No se pudo validar la cuenta de vendedor.');
@@ -90,7 +104,10 @@ export default function AuthScreen() {
   return (
     <Screen>
       <Eyebrow>Cuenta de {isSeller ? 'vendedor' : 'cliente'}</Eyebrow>
-      <PageHeading title="Qué bueno verte." description="Accede a tu cuenta para continuar en Nokory." />
+      <PageHeading
+        title="Qué bueno verte."
+        description="Accede a tu cuenta para continuar en Nokory."
+      />
       <Pressable onPress={() => router.replace('/role-select')} style={styles.changeRole}>
         <View style={styles.changeRoleContent}>
           <SymbolView name={{ ios: 'arrow.left', android: 'arrow_back', web: 'arrow_back' }} tintColor={palette.muted} size={16} />
@@ -114,18 +131,16 @@ export default function AuthScreen() {
             <Field autoCapitalize="none" autoComplete="email" keyboardType="email-address" label="Correo electrónico" onChangeText={setEmail} placeholder="nombre@correo.com" value={email} />
             <View style={styles.passwordField}>
               <Text style={styles.fieldLabel}>Contraseña</Text>
-              <View style={styles.passwordInputWrap}>
-                <TextInput
-                  autoCapitalize="none"
-                  autoComplete={isRegistering ? 'new-password' : 'current-password'}
-                  onChangeText={setPassword}
-                  placeholder="Ingresa tu contraseña"
-                  placeholderTextColor="#A39BA7"
-                  secureTextEntry={!showPassword}
-                  style={styles.passwordInput}
-                  value={password}
-                />
-              </View>
+              <TextInput
+                autoCapitalize="none"
+                autoComplete={isRegistering ? 'new-password' : 'current-password'}
+                onChangeText={setPassword}
+                placeholder="Ingresa tu contraseña"
+                placeholderTextColor="#A39BA7"
+                secureTextEntry={!showPassword}
+                style={styles.passwordInput}
+                value={password}
+              />
               <Pressable
                 accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                 accessibilityRole="button"
@@ -176,29 +191,33 @@ export default function AuthScreen() {
 
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         {success ? <Text accessibilityRole="alert" style={styles.success}>{success}</Text> : null}
-        <PrimaryButton
-          disabled={submitting}
-          label={submitting ? 'Validando…' : isRegistering ? 'Crear cuenta' : 'Iniciar sesión'}
-          onPress={() => { void continueToProfile(); }}
-        />
-        {submitting ? <ActivityIndicator color={palette.purple} style={styles.spinner} /> : null}
-        <View style={styles.divider} />
-        <Text style={styles.switchPrompt}>{isRegistering ? '¿Ya tienes una cuenta?' : '¿Aún no tienes una cuenta?'}</Text>
-        <Pressable
-          disabled={submitting}
-          onPress={() => {
-            setError('');
-            setSuccess('');
-            setPassword('');
-            setShowPassword(false);
-            setIsRegistering(!isRegistering);
-          }}
-        >
-          <Text style={styles.switchLink}>{isRegistering ? 'Iniciar sesión' : 'Regístrate'}</Text>
-        </Pressable>
-        <Text style={styles.privacy}>◉  Solo usamos tus datos para identificar tu cuenta.</Text>
+        {isSeller ? (
+          <>
+            <PrimaryButton
+              disabled={submitting}
+              label={submitting ? 'Validando…' : isRegistering ? 'Crear cuenta' : 'Iniciar sesión'}
+              onPress={() => { void continueToProfile(); }}
+            />
+            {submitting ? <ActivityIndicator color={palette.purple} style={styles.spinner} /> : null}
+            <View style={styles.divider} />
+            <Text style={styles.switchPrompt}>{isRegistering ? '¿Ya tienes una cuenta?' : '¿Aún no tienes una cuenta?'}</Text>
+            <Pressable
+              disabled={submitting}
+              onPress={() => {
+                setError('');
+                setSuccess('');
+                setPassword('');
+                setShowPassword(false);
+                setIsRegistering(!isRegistering);
+              }}
+            >
+              <Text style={styles.switchLink}>{isRegistering ? 'Iniciar sesión' : 'Regístrate'}</Text>
+            </Pressable>
+            <Text style={styles.privacy}>◉  Solo usamos tus datos para identificar tu cuenta.</Text>
+          </>
+        ) : <PrimaryButton label="Continuar" onPress={() => { void continueToProfile(); }} />}
       </View>
-      <Text style={styles.note}>{isSeller ? 'El registro y el inicio de sesión se validan en el servidor.' : 'Para comercios salvadoreños'}</Text>
+      <Text style={styles.note}>{isSeller ? 'Tu cuenta se autentica de forma segura con Supabase.' : 'Para comercios salvadoreños'}</Text>
     </Screen>
   );
 }
@@ -227,9 +246,8 @@ const styles = StyleSheet.create({
   error: { color: '#B23B45', fontSize: 12, marginTop: -4 },
   success: { color: '#477344', fontSize: 12, lineHeight: 18, marginTop: 2 },
   passwordField: { marginBottom: 16, position: 'relative' },
-  passwordInputWrap: { justifyContent: 'center' },
   passwordInput: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 11, borderWidth: 1, color: palette.text, fontSize: 15, minHeight: 48, paddingHorizontal: 13, paddingRight: 48 },
-  passwordVisibility: { alignItems: 'center', borderColor: 'transparent', borderRadius: 8, borderWidth: 0, elevation: 0, height: 48, justifyContent: 'center', outlineColor: 'transparent', outlineStyle: 'solid', outlineWidth: 0, position: 'absolute', right: 4, shadowColor: 'transparent', shadowOpacity: 0, shadowRadius: 0, top: 25, width: 40 },
+  passwordVisibility: { alignItems: 'center', height: 48, justifyContent: 'center', position: 'absolute', right: 4, top: 25, width: 40 },
   passwordRequirements: { marginBottom: 12, marginTop: -10 },
   passwordRequirement: { color: '#B23B45', fontSize: 11, lineHeight: 16 },
   spinner: { marginTop: 10 },

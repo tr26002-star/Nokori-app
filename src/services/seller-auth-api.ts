@@ -1,31 +1,48 @@
-import { request } from './api-client';
+import type { User } from '@supabase/supabase-js';
+import { getSupabaseClient } from './supabase';
 
 export type SellerAccount = {
+  id: string;
   email: string;
   businessName: string;
 };
 
-function isSellerAccount(value: unknown): value is SellerAccount {
-  if (typeof value !== 'object' || value === null) return false;
-  const account = value as Record<string, unknown>;
-  return typeof account.email === 'string' && typeof account.businessName === 'string';
+function toSellerAccount(user: User, fallbackEmail: string): SellerAccount {
+  return {
+    id: user.id,
+    email: user.email ?? fallbackEmail,
+    businessName: typeof user.user_metadata.business_name === 'string'
+      ? user.user_metadata.business_name
+      : 'Tu negocio',
+  };
 }
 
-async function sellerRequest(path: string, body: Record<string, string>): Promise<SellerAccount> {
-  const payload = await request<{ seller: unknown }>(path, {
-    method: 'POST',
-    body: JSON.stringify(body),
+export async function registerSeller(
+  email: string,
+  password: string,
+  businessName: string,
+): Promise<{ account: SellerAccount; emailConfirmationRequired: boolean }> {
+  const { data, error } = await getSupabaseClient().auth.signUp({
+    email,
+    password,
+    options: { data: { business_name: businessName } },
   });
-  if (!isSellerAccount(payload.seller)) {
-    throw new Error('La API no devolvió los datos esperados de la cuenta.');
-  }
-  return payload.seller;
+  if (error) throw error;
+  if (!data.user) throw new Error('Supabase no devolvió los datos de la cuenta creada.');
+  return {
+    account: toSellerAccount(data.user, email),
+    emailConfirmationRequired: !data.session,
+  };
 }
 
-export function registerSeller(email: string, password: string, businessName: string): Promise<SellerAccount> {
-  return sellerRequest('/seller/register', { email, password, businessName });
+export async function loginSeller(email: string, password: string): Promise<SellerAccount> {
+  const { data, error } = await getSupabaseClient().auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  if (!data.user) throw new Error('Supabase no devolvió los datos de la cuenta.');
+  return toSellerAccount(data.user, email);
 }
 
-export function loginSeller(email: string, password: string): Promise<SellerAccount> {
-  return sellerRequest('/seller/login', { email, password });
+export async function logoutSeller(): Promise<void> {
+  const { error } = await getSupabaseClient().auth.signOut();
+  if (error) throw error;
 }

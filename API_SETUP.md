@@ -1,49 +1,42 @@
-# API local de Nokory
+# Configuración de Supabase
 
-Esta API guarda las publicaciones en `backend/data/products.json`, las cuentas de vendedor en `backend/data/sellers.json` y las fotos en `backend/uploads/`. Las contraseñas de vendedor se guardan como hashes scrypt con salt aleatorio, nunca en texto plano. El servidor debe permanecer encendido para que los otros teléfonos puedan ver las publicaciones y autenticar vendedores. Esta configuración está pensada para una demostración con equipos conectados a la misma red Wi‑Fi.
+La aplicación usa Supabase Auth para las cuentas de vendedor y PostgreSQL para los productos. No se conecta a MockAPI ni necesita iniciar el backend local para estas funciones.
 
-## Iniciar el servidor
+## 1. Crear el proyecto y configurar las variables
 
-1. En la computadora que ejecutará la API, abre una terminal dentro de `Nokori-app`.
-2. Ejecuta `npm install` si aún no instalaste las dependencias del proyecto.
-3. Inicia el servidor con:
-
-   ```sh
-   npm run api
-   ```
-
-La API escucha en el puerto `4000`. Puedes comprobar que está activa abriendo `http://localhost:4000/api/health` en esa computadora; debe responder `{"status":"ok"}`.
-
-## Conectar los teléfonos
-
-1. Conecta los teléfonos y la computadora a la misma red Wi‑Fi.
-2. En Windows, ejecuta `ipconfig` y busca la dirección IPv4 de la conexión Wi‑Fi de la computadora, por ejemplo `192.168.1.25`.
-3. Copia `.env.example` como `.env` y cambia la dirección por la IP encontrada:
+1. Crea un proyecto en [Supabase](https://supabase.com/dashboard).
+2. En **Connect** (o **Project Settings → API Keys**) copia la URL del proyecto y la **Publishable key** (`sb_publishable_...`). No uses una secret key ni `service_role` en la app.
+3. Pon esos valores en el `.env` local:
 
    ```env
-   EXPO_PUBLIC_API_URL=http://192.168.1.25:4000/api
+   EXPO_PUBLIC_SUPABASE_URL=https://TU_PROJECT_REF.supabase.co
+   EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_TU_CLAVE
    ```
 
-4. Reinicia Expo para que lea `.env`:
+4. Reinicia Expo después de guardar `.env`:
 
    ```sh
    npx expo start -c
    ```
 
-5. Abre Expo Go en cada teléfono y escanea el QR. Si Windows pregunta, permite el acceso del servidor en redes privadas.
+Las variables `EXPO_PUBLIC_` se incluyen en la aplicación. La publishable key está diseñada para clientes públicos y no es una contraseña; la seguridad de los datos depende de Auth y las políticas RLS.
 
-No uses `localhost` en `.env`: en cada teléfono, `localhost` apuntaría al propio teléfono, no a la computadora que tiene los datos.
+## 2. Crear la tabla y aplicar RLS
 
-## Rutas de la API
+Abre el **SQL Editor** del proyecto, revisa [schema.sql](./supabase/schema.sql) y ejecútalo allí. Este SQL crea `public.products`, habilita RLS y concede lectura pública. Solo usuarios autenticados pueden insertar o actualizar productos cuya columna `seller_id` coincide con su identidad Auth. No concede borrado. El SQL no crea usuarios, no guarda contraseñas en tablas y no usa una clave privilegiada.
 
-- `GET /api/health`: confirma que el servidor está activo.
-- `GET /api/products`: devuelve las publicaciones compartidas.
-- `POST /api/products`: guarda un producto.
-- `POST /api/uploads`: guarda una foto JPEG, PNG o WebP y devuelve su URL.
-- `POST /api/seller/register`: valida los datos y registra una cuenta de vendedor.
-- `POST /api/seller/login`: valida las credenciales de una cuenta de vendedor ya registrada.
-- `GET /uploads/:archivo`: entrega una foto guardada.
+La tabla almacena `image_url` como texto; la aplicación guarda ahí las fotos como data URL, igual que antes. Conviene usar imágenes pequeñas para evitar registros muy grandes.
 
-Explorar consulta la API cada cinco segundos. Los datos, las cuentas y las fotos permanecen en la computadora del servidor. Haz una copia de `backend/data/products.json`, `backend/data/sellers.json` y `backend/uploads/` si quieres conservarlos fuera de esa computadora.
+## 3. Ajustar Auth
 
-El registro e inicio de sesión de vendedor requieren conexión con esta API local. Este prototipo valida las credenciales mediante el servidor; antes de exponerlo a Internet se necesita alojamiento público con almacenamiento persistente, HTTPS, sesiones protegidas y controles de acceso para las escrituras.
+En **Authentication → Providers → Email**, habilita Email si está desactivado y decide si exigir confirmación por correo. Si está activada, el vendedor debe confirmar el correo antes de iniciar sesión. Configura también las URL de redirección permitidas si luego habilitas enlaces de confirmación o recuperación.
+
+El nombre del negocio se guarda como metadato del usuario de Supabase Auth y se copia a cada publicación. Las contraseñas las gestiona Supabase Auth; la aplicación nunca las inserta en la tabla de productos.
+
+Las cuentas y publicaciones que existan en la API local o MockAPI no se migran automáticamente. Cada vendedor debe crear su cuenta de Supabase; no importes contraseñas antiguas. Si necesitas conservar publicaciones previas, migra sus datos de producto por separado después de crear el proyecto.
+
+## SQL que se aplicará
+
+Antes de ejecutar nada, inspecciona el SQL completo en [supabase/schema.sql](./supabase/schema.sql). No se ha ejecutado ningún cambio remoto. El SQL crea una tabla e índice si no existen, habilita RLS, reemplaza las tres políticas con nombres propios y establece permisos para `anon` y `authenticated`.
+
+El backend local se conserva en el repositorio, pero la aplicación no lo usa para Auth ni productos.

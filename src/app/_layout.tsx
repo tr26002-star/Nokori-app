@@ -10,6 +10,7 @@ export default function RootLayout() {
       <Stack.Screen name="profile" />
       <Stack.Screen name="explore" />
       <Stack.Screen name="publish" />
+      <Stack.Screen name="reservations" />
     </Stack>
   );
 }
