@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Eyebrow, Screen, palette } from '../shared/screen-ui';
 
 function SettingsRow({ icon, title, detail, onPress, tone = 'purple' }: { icon: 'checkmark.shield' | 'heart'; title: string; detail: string; onPress: () => void; tone?: 'purple' | 'green' }) {
@@ -26,7 +26,7 @@ export default function ProfileScreen() {
   const contact = isSeller ? email : phone;
 
   return (
-    <Screen contentStyle={styles.screenContent} showBottomNav showBrand={false} showDecorations={false}>
+    <Screen contentStyle={styles.screenContent} navVariant={role === 'client' ? 'client' : 'seller'} showBottomNav showBrand={false} showDecorations={false}>
       <Eyebrow>Tu cuenta</Eyebrow>
       <Text style={styles.title}>Perfil</Text>
       <View style={styles.profileCard}>
@@ -44,7 +44,7 @@ export default function ProfileScreen() {
         <Text style={styles.sectionLabel}>Configuración</Text>
         <Text style={styles.sectionDescription}>{isSeller ? 'Tu cuenta está vinculada al perfil de vendedor con el que te registraste.' : 'Tu cuenta está lista para empezar a ahorrar o compartir.'}</Text>
         <SettingsRow icon="checkmark.shield" title="Normas de la comunidad" detail="Conoce las reglas para clientes y vendedores" onPress={() => router.push('/norms')} />
-        <SettingsRow icon="heart" title="Soporte" detail="Reporta un problema o comparte una mejora" onPress={() => Alert.alert('Soporte', 'Esta pantalla será conectada desde el trabajo de tu equipo.')} tone="green" />
+       <SettingsRow icon="heart" title="Soporte" detail="Reporta un problema o comparte una mejora" onPress={() => router.push('/support')} tone="green" />
         <Pressable accessibilityRole="button" onPress={() => router.replace('/role-select')} style={styles.signOut}>
           <View style={styles.signOutContent}>
             <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} tintColor="#A75252" size={15} />

@@ -1,8 +1,8 @@
+import { loginSeller, registerSeller } from '@/services/seller-auth-api';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { loginSeller, registerSeller } from '@/services/seller-auth-api';
 import { Eyebrow, Field, PageHeading, PrimaryButton, Screen, palette } from '../shared/screen-ui';
 
 function getPasswordRequirements(password: string) {
@@ -84,8 +84,8 @@ export default function AuthScreen() {
       setError('Ingresa tu número salvadoreño de 8 dígitos.');
       return;
     }
-    router.push({ pathname: '/profile', params: { role: 'client', phone: `+503 ${digits}` } });
-  }
+router.replace('/client-explore');  
+ }
 
   return (
     <Screen>

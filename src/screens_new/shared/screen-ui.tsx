@@ -2,14 +2,14 @@ import { usePathname, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import type { ReactNode } from 'react';
 import {
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
-    type TextInputProps,
-    type ViewStyle,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type TextInputProps,
+  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -31,7 +31,13 @@ const bottomNavItems = [
   { route: '/profile', label: 'Perfil', ios: 'person.crop.circle.fill', icon: 'account_circle' },
 ] as const;
 
-export function Screen({ children, contentStyle, showBottomNav = false, showBrand = true, showDecorations = true }: { children: ReactNode; contentStyle?: ViewStyle; showBottomNav?: boolean; showBrand?: boolean; showDecorations?: boolean }) {
+const clientNavItems = [
+  { route: '/client-explore', label: 'Explorar', ios: 'safari.fill', icon: 'explore' },
+  { route: '/reservations', label: 'Reservas', ios: 'ticket.fill', icon: 'confirmation_number' },
+  { route: '/profile', label: 'Perfil', ios: 'person.crop.circle.fill', icon: 'account_circle' },
+] as const;
+
+export function Screen({ children, contentStyle, showBottomNav = false, showBrand = true, showDecorations = true, navVariant = 'seller' }: { children: ReactNode; contentStyle?: ViewStyle; showBottomNav?: boolean; showBrand?: boolean; showDecorations?: boolean; navVariant?: 'seller' | 'client' }) {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -54,14 +60,14 @@ export function Screen({ children, contentStyle, showBottomNav = false, showBran
       </ScrollView>
       {showBottomNav ? (
         <View style={styles.bottomNav}>
-          {bottomNavItems.map((item) => {
+          {(navVariant === 'client' ? clientNavItems : bottomNavItems).map((item) => {
             const active = pathname === item.route;
             return (
               <Pressable
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
                 key={item.route}
-                onPress={() => router.replace(item.route)}
+                onPress={() => router.replace(navVariant === 'client' && item.route === '/profile' ? { pathname: '/profile', params: { role: 'client' } } : item.route)}
                 style={styles.navItem}
               >
                 <SymbolView

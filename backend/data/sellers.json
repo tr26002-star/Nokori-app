@@ -12,5 +12,12 @@
     "passwordSalt": "89accdfd4e50d9bbcb51a62e6ef96f0b",
     "passwordHash": "ac4ab29c9f236db26d8835c73b6d4f806db531dbd05b6e4294a43c544bc15ab3397468187b26e4db33c79a1c9396c2c6c4c1b9009804b648f00c5a1add37d41e",
     "createdAt": "2026-10-28T05:46:08.638Z"
+  },
+  {
+    "email": "panaderiaesfe@gmail.com",
+    "businessName": "Panadería",
+    "passwordSalt": "5152287c6cbad7c559e3fceceb61dc0f",
+    "passwordHash": "1035d358613d84bf10caf8dc7733a5f85b95447113d216922031a3f86dd666fc9e1d02e265f1a1da7c4e60721e530548f2c6b39e85a1de9fbc9d6b408b7ef308",
+    "createdAt": "2026-10-31T00:00:54.139Z"
   }
 ]
