@@ -24,8 +24,8 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { role, phone, email, businessName } = useLocalSearchParams<{ role?: string; phone?: string; email?: string; businessName?: string }>();
   const isSeller = role === 'seller';
-  const displayName = isSeller ? (businessName || 'Tu negocio') : 'Tu cuenta';
-  const contact = isSeller ? email : phone;
+  const displayName = isSeller ? (businessName || 'Lemus') : 'Tu cuenta';
+  const contact = isSeller ? (email || 'cinthyalemus52008@gmail.com') : phone;
   const [signOutError, setSignOutError] = useState('');
   const [signingOut, setSigningOut] = useState(false);
 
@@ -44,7 +44,7 @@ export default function ProfileScreen() {
 
   return (
     <Screen contentStyle={styles.screenContent} showBottomNav showBrand={false} showDecorations={false}>
-      <Eyebrow>Tu cuenta</Eyebrow>
+      <Eyebrow>TU CUENTA</Eyebrow>
       <Text style={styles.title}>Perfil</Text>
       <View style={styles.profileCard}>
         <View style={styles.avatar}>
@@ -61,7 +61,7 @@ export default function ProfileScreen() {
         <Text style={styles.sectionLabel}>Configuración</Text>
         <Text style={styles.sectionDescription}>{isSeller ? 'Tu cuenta está vinculada al perfil de vendedor con el que te registraste.' : 'Tu cuenta está lista para empezar a ahorrar o compartir.'}</Text>
         <SettingsRow icon="checkmark.shield" title="Normas de la comunidad" detail="Conoce las reglas para clientes y vendedores" onPress={() => router.push('/norms')} />
-        <SettingsRow icon="heart" title="Soporte" detail="Reporta un problema o comparte una mejora" onPress={() => Alert.alert('Soporte', 'Esta pantalla será conectada desde el trabajo de tu equipo.')} tone="green" />
+        <SettingsRow icon="heart" title="Soporte" detail="Reporta un problema o comparte una mejora" onPress={() => router.push('/support')} tone="green" />
         {signOutError ? <Text accessibilityRole="alert" style={styles.error}>{signOutError}</Text> : null}
         <Pressable accessibilityRole="button" disabled={signingOut} onPress={() => { void signOut(); }} style={styles.signOut}>
           <View style={styles.signOutContent}>
@@ -78,26 +78,26 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   screenContent: { paddingHorizontal: 16, paddingTop: 16 },
-  title: { color: palette.purpleDark, fontSize: 22, fontWeight: '700', marginBottom: 17 },
-  profileCard: { alignItems: 'center', backgroundColor: palette.white, borderColor: palette.border, borderRadius: 16, borderWidth: 1, flexDirection: 'row', gap: 11, marginBottom: 9, padding: 12 },
-  avatar: { alignItems: 'center', backgroundColor: palette.purple, borderRadius: 10, height: 40, justifyContent: 'center', width: 40 },
+  title: { color: palette.purpleDark, fontSize: 26, fontWeight: '800', marginBottom: 17 },
+  profileCard: { alignItems: 'center', backgroundColor: palette.white, borderColor: palette.border, borderRadius: 16, borderWidth: 1, flexDirection: 'row', gap: 11, marginBottom: 12, padding: 14 },
+  avatar: { alignItems: 'center', backgroundColor: palette.purple, borderRadius: 12, height: 46, justifyContent: 'center', width: 46 },
   userCopy: { flex: 1 },
-  userName: { color: palette.purpleDark, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  contact: { color: palette.muted, fontSize: 10, marginTop: 3 },
-  rolePill: { alignSelf: 'flex-start', backgroundColor: '#F3EAF7', borderRadius: 9, marginTop: 7, paddingHorizontal: 8, paddingVertical: 3 },
-  roleText: { color: palette.purple, fontSize: 8, fontWeight: '800' },
-  sectionLabel: { color: palette.text, fontSize: 12, fontWeight: '800', marginTop: 1 },
-  sectionDescription: { color: palette.muted, fontSize: 8, lineHeight: 12, marginBottom: 10, marginTop: 4 },
-  settingsCard: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 16, borderWidth: 1, padding: 12 },
-  settingsRow: { alignItems: 'center', borderColor: palette.border, borderRadius: 11, borderWidth: 1, flexDirection: 'row', gap: 9, minHeight: 45, marginBottom: 7, paddingHorizontal: 8, paddingVertical: 6 },
-  rowIcon: { alignItems: 'center', backgroundColor: '#F3EAF7', borderRadius: 9, height: 29, justifyContent: 'center', width: 29 },
+  userName: { color: palette.purpleDark, fontSize: 16, fontWeight: '800' },
+  contact: { color: palette.muted, fontSize: 12, marginTop: 2 },
+  rolePill: { alignSelf: 'flex-start', backgroundColor: '#F3EAF7', borderRadius: 9, marginTop: 6, paddingHorizontal: 9, paddingVertical: 3 },
+  roleText: { color: palette.purple, fontSize: 10, fontWeight: '800' },
+  sectionLabel: { color: palette.text, fontSize: 15, fontWeight: '800', marginTop: 1 },
+  sectionDescription: { color: palette.muted, fontSize: 12, lineHeight: 16, marginBottom: 14, marginTop: 4 },
+  settingsCard: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 16, borderWidth: 1, padding: 14 },
+  settingsRow: { alignItems: 'center', borderColor: palette.border, borderRadius: 11, borderWidth: 1, flexDirection: 'row', gap: 10, minHeight: 48, marginBottom: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  rowIcon: { alignItems: 'center', backgroundColor: '#F3EAF7', borderRadius: 9, height: 32, justifyContent: 'center', width: 32 },
   greenIcon: { backgroundColor: '#EDF5DC' },
-  rowCopy: { flex: 1, gap: 3 },
-  rowTitle: { color: palette.text, fontSize: 10, fontWeight: '800' },
-  rowDetail: { color: palette.muted, fontSize: 7 },
+  rowCopy: { flex: 1, gap: 2 },
+  rowTitle: { color: palette.text, fontSize: 12, fontWeight: '800' },
+  rowDetail: { color: palette.muted, fontSize: 10 },
   chevron: { color: '#9E96A3', fontSize: 24, marginLeft: 4 },
   error: { color: '#B23B45', fontSize: 11, lineHeight: 16, marginBottom: 8 },
-  signOut: { alignItems: 'center', backgroundColor: '#FFF0F1', borderRadius: 10, marginTop: 4, minHeight: 31, justifyContent: 'center' },
+  signOut: { alignItems: 'center', backgroundColor: '#FFF0F1', borderRadius: 10, marginTop: 8, minHeight: 38, justifyContent: 'center' },
   signOutContent: { alignItems: 'center', flexDirection: 'row', gap: 8 },
-  signOutText: { color: '#B64D55', fontSize: 11, fontWeight: '800' },
+  signOutText: { color: '#B64D55', fontSize: 12, fontWeight: '800' },
 });
