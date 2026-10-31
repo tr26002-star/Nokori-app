@@ -1,8 +1,8 @@
+import { logoutSeller } from '@/services/seller-auth-api';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { logoutSeller } from '@/services/seller-auth-api';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Eyebrow, Screen, palette } from '../shared/screen-ui';
 
 function SettingsRow({ icon, title, detail, onPress, tone = 'purple' }: { icon: 'checkmark.shield' | 'heart'; title: string; detail: string; onPress: () => void; tone?: 'purple' | 'green' }) {
@@ -61,8 +61,7 @@ export default function ProfileScreen() {
         <Text style={styles.sectionLabel}>Configuración</Text>
         <Text style={styles.sectionDescription}>{isSeller ? 'Tu cuenta está vinculada al perfil de vendedor con el que te registraste.' : 'Tu cuenta está lista para empezar a ahorrar o compartir.'}</Text>
         <SettingsRow icon="checkmark.shield" title="Normas de la comunidad" detail="Conoce las reglas para clientes y vendedores" onPress={() => router.push('/norms')} />
-        <SettingsRow icon="heart" title="Soporte" detail="Reporta un problema o comparte una mejora" onPress={() => Alert.alert('Soporte', 'Esta pantalla será conectada desde el trabajo de tu equipo.')} tone="green" />
-        {signOutError ? <Text accessibilityRole="alert" style={styles.error}>{signOutError}</Text> : null}
+   <SettingsRow icon="heart" title="Soporte" detail="Reporta un problema o comparte una mejora" onPress={() => router.push('/support')} tone="green" />        {signOutError ? <Text accessibilityRole="alert" style={styles.error}>{signOutError}</Text> : null}
         <Pressable accessibilityRole="button" disabled={signingOut} onPress={() => { void signOut(); }} style={styles.signOut}>
           <View style={styles.signOutContent}>
             {signingOut
