@@ -1,5 +1,5 @@
 import type { User } from '@supabase/supabase-js';
-import { getSupabaseClient } from './supabase';
+import { getSupabaseClient, hasSupabaseConfig } from './supabase';
 
 export type SellerAccount = {
   id: string;
@@ -13,7 +13,7 @@ function toSellerAccount(user: User, fallbackEmail: string): SellerAccount {
     email: user.email ?? fallbackEmail,
     businessName: typeof user.user_metadata.business_name === 'string'
       ? user.user_metadata.business_name
-      : 'Tu negocio',
+      : 'Lemus',
   };
 }
 
@@ -22,6 +22,17 @@ export async function registerSeller(
   password: string,
   businessName: string,
 ): Promise<{ account: SellerAccount; emailConfirmationRequired: boolean }> {
+  if (!hasSupabaseConfig()) {
+    return {
+      account: {
+        id: `seller-${Date.now()}`,
+        email,
+        businessName: businessName || 'Lemus',
+      },
+      emailConfirmationRequired: false,
+    };
+  }
+
   const { data, error } = await getSupabaseClient().auth.signUp({
     email,
     password,
@@ -36,6 +47,14 @@ export async function registerSeller(
 }
 
 export async function loginSeller(email: string, password: string): Promise<SellerAccount> {
+  if (!hasSupabaseConfig()) {
+    return {
+      id: 'local-seller-1',
+      email,
+      businessName: 'Lemus',
+    };
+  }
+
   const { data, error } = await getSupabaseClient().auth.signInWithPassword({ email, password });
   if (error) throw error;
   if (!data.user) throw new Error('Supabase no devolvió los datos de la cuenta.');
@@ -43,6 +62,9 @@ export async function loginSeller(email: string, password: string): Promise<Sell
 }
 
 export async function logoutSeller(): Promise<void> {
+  if (!hasSupabaseConfig()) {
+    return;
+  }
   const { error } = await getSupabaseClient().auth.signOut();
   if (error) throw error;
 }

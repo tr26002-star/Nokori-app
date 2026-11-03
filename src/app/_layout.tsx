@@ -5,6 +5,7 @@ export default function RootLayout() {
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FFF9F5' } }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="norms" />
+      <Stack.Screen name="support" />
       <Stack.Screen name="role-select" />
       <Stack.Screen name="auth" />
       <Stack.Screen name="profile" />

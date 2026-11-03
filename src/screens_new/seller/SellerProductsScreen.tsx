@@ -5,30 +5,17 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import {
   getSellerProducts,
   unpublishSellerProduct,
-  updateSellerProduct,
   type Product,
 } from '@/services/products-api';
 import { Eyebrow, Screen, palette } from '../shared/screen-ui';
-
-type ProductDraft = {
-  name: string;
-  description: string;
-  category: string;
-  price: string;
-  quantity: string;
-  pickupStart: string;
-  pickupEnd: string;
-};
 
 function ProductCard({
   product,
@@ -46,7 +33,7 @@ function ProductCard({
         <Image accessibilityLabel={product.name} source={{ uri: product.imageUrl }} style={styles.productImage} />
       ) : (
         <View style={styles.imagePlaceholder}>
-          <SymbolView name={{ ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }} tintColor={palette.green} size={27} />
+          <SymbolView name={{ ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }} tintColor={palette.purple} size={28} />
         </View>
       )}
       <View style={styles.productContent}>
@@ -59,7 +46,9 @@ function ProductCard({
           </View>
         </View>
         <Text style={styles.productName}>{product.name}</Text>
-        <Text numberOfLines={2} style={styles.description}>{product.description}</Text>
+        {product.description ? (
+          <Text numberOfLines={2} style={styles.description}>{product.description}</Text>
+        ) : null}
         <Text style={styles.schedule}>Recogida: {product.pickupStart} – {product.pickupEnd}</Text>
         <Text style={styles.availableQuantity}>{product.quantity} packs disponibles · ${product.price.toFixed(2)}</Text>
         <View style={styles.actions}>
@@ -81,16 +70,6 @@ function ProductCard({
   );
 }
 
-function SummaryCard({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return (
-    <View style={styles.summaryCard}>
-      <Text style={styles.summaryLabel}>{label}</Text>
-      <Text numberOfLines={1} adjustsFontSizeToFit style={styles.summaryValue}>{value}</Text>
-      <Text numberOfLines={1} style={styles.summaryDetail}>{detail}</Text>
-    </View>
-  );
-}
-
 export default function SellerProductsScreen() {
   const router = useRouter();
   const { email, businessName } = useLocalSearchParams<{ email?: string; businessName?: string }>();
@@ -98,9 +77,6 @@ export default function SellerProductsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [draft, setDraft] = useState<ProductDraft | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const loadProducts = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -128,7 +104,9 @@ export default function SellerProductsScreen() {
             setError('');
           }
         } catch (cause) {
-          if (active) setError(cause instanceof Error ? cause.message : 'No se pudieron cargar tus productos.');
+          if (active) {
+            setError(cause instanceof Error ? cause.message : 'No se pudieron cargar tus productos.');
+          }
         } finally {
           if (active) setLoading(false);
         }
@@ -139,63 +117,23 @@ export default function SellerProductsScreen() {
   );
 
   function openEditor(product: Product) {
-    setEditingProduct(product);
-    setDraft({
-      name: product.name,
-      description: product.description,
-      category: product.category,
-      price: String(product.price),
-      quantity: String(product.quantity),
-      pickupStart: product.pickupStart,
-      pickupEnd: product.pickupEnd,
+    router.push({
+      pathname: '/publish',
+      params: {
+        role: 'seller',
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        category: product.category,
+        price: String(product.price),
+        quantity: String(product.quantity),
+        pickupStart: product.pickupStart,
+        pickupEnd: product.pickupEnd,
+        isEditing: 'true',
+        ...(typeof email === 'string' ? { email } : {}),
+        ...(typeof businessName === 'string' ? { businessName } : {}),
+      },
     });
-    setError('');
-  }
-
-  async function saveProduct() {
-    if (!editingProduct || !draft) return;
-    const price = Number(draft.price.replace(',', '.'));
-    const quantity = Number(draft.quantity);
-    if (draft.name.trim().length < 3) {
-      setError('Escribe un nombre de al menos 3 caracteres.');
-      return;
-    }
-    if (!draft.category.trim()) {
-      setError('Escribe una categoría.');
-      return;
-    }
-    if (!Number.isFinite(price) || price <= 0) {
-      setError('Ingresa un precio mayor que cero.');
-      return;
-    }
-    if (!Number.isInteger(quantity) || quantity < 1) {
-      setError('La cantidad debe ser al menos un pack.');
-      return;
-    }
-    if (!draft.pickupStart.trim() || !draft.pickupEnd.trim()) {
-      setError('Completa el horario de recogida.');
-      return;
-    }
-    setSaving(true);
-    setError('');
-    try {
-      const updated = await updateSellerProduct(editingProduct.id, {
-        name: draft.name.trim(),
-        description: draft.description.trim(),
-        category: draft.category.trim(),
-        price,
-        quantity,
-        pickupStart: draft.pickupStart.trim(),
-        pickupEnd: draft.pickupEnd.trim(),
-      });
-      setProducts((current) => current.map((item) => item.id === updated.id ? updated : item));
-      setEditingProduct(null);
-      setDraft(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo actualizar el producto.');
-    } finally {
-      setSaving(false);
-    }
   }
 
   function confirmUnpublish(product: Product) {
@@ -224,6 +162,10 @@ export default function SellerProductsScreen() {
     (total, product) => total + (product.isPublished ? product.quantity : 0),
     0,
   );
+  const rescuedValueTotal = products
+    .filter((product) => product.isPublished)
+    .reduce((total, product) => total + (product.price * product.quantity), 0);
+
   const navigationParams = {
     role: 'seller',
     ...(typeof email === 'string' ? { email } : {}),
@@ -232,9 +174,10 @@ export default function SellerProductsScreen() {
 
   return (
     <Screen contentStyle={styles.screenContent} showBottomNav showBrand={false} showDecorations={false}>
+      {/* Cabecera idéntica al diseño del PDF */}
       <View style={styles.header}>
         <View style={styles.headerText}>
-          <Eyebrow>Panel del negocio</Eyebrow>
+          <Eyebrow>PANEL DEL NEGOCIO</Eyebrow>
           <Text style={styles.title}>Mis productos</Text>
           <Text style={styles.subtitle}>Gestiona tus ofertas y su disponibilidad.</Text>
         </View>
@@ -248,20 +191,61 @@ export default function SellerProductsScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.summary}>
-        <SummaryCard label="Publicados" value={String(publishedCount)} detail="productos activos" />
-        <SummaryCard label="Packs disponibles" value={String(availablePacks)} detail="en oferta" />
-        <SummaryCard label="Valor rescatado" value="$0.00" detail="ventas registradas" />
+      {/* Métricas con diseño idéntico al PDF: 2 tarjetas arriba y 1 abajo con iconos */}
+      <View style={styles.metricsContainer}>
+        <View style={styles.metricsRowTop}>
+          {/* Publicados */}
+          <View style={styles.metricCard}>
+            <View style={styles.metricCardHeader}>
+              <Text style={styles.metricLabel}>Publicados</Text>
+              <SymbolView
+                name={{ ios: 'shippingbox', android: 'inventory_2', web: 'inventory_2' }}
+                tintColor={palette.purple}
+                size={18}
+              />
+            </View>
+            <Text style={styles.metricValue}>{publishedCount}</Text>
+          </View>
+
+          {/* Packs disponibles */}
+          <View style={styles.metricCard}>
+            <View style={styles.metricCardHeader}>
+              <Text style={styles.metricLabel}>Packs disponibles</Text>
+              <SymbolView
+                name={{ ios: 'leaf', android: 'eco', web: 'eco' }}
+                tintColor={palette.purple}
+                size={18}
+              />
+            </View>
+            <Text style={styles.metricValue}>{availablePacks}</Text>
+          </View>
+        </View>
+
+        {/* Valor rescatado ancho */}
+        <View style={styles.metricCardFull}>
+          <View style={styles.metricCardHeader}>
+            <Text style={styles.metricLabel}>Valor rescatado</Text>
+            <SymbolView
+              name={{ ios: 'heart', android: 'favorite_border', web: 'favorite_border' }}
+              tintColor={palette.purple}
+              size={18}
+            />
+          </View>
+          <Text style={styles.metricValueLarge}>${rescuedValueTotal.toFixed(2)}</Text>
+        </View>
       </View>
 
-      <View style={styles.listHeading}>
-        <Text style={styles.listTitle}>Tus ofertas</Text>
-        <Pressable accessibilityRole="button" disabled={refreshing} onPress={() => { void loadProducts(true); }}>
-          <Text style={styles.refreshText}>{refreshing ? 'Actualizando…' : 'Actualizar'}</Text>
-        </Pressable>
-      </View>
+      {/* Título de lista de ofertas si existen */}
+      {products.length > 0 ? (
+        <View style={styles.listHeading}>
+          <Text style={styles.listTitle}>Tus ofertas publicadas</Text>
+          <Pressable accessibilityRole="button" disabled={refreshing} onPress={() => { void loadProducts(true); }}>
+            <Text style={styles.refreshText}>{refreshing ? 'Actualizando…' : 'Actualizar'}</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
-      {error && !editingProduct ? (
+      {error ? (
         <View style={styles.messageCard}>
           <Text style={styles.errorText}>{error}</Text>
           <Pressable accessibilityRole="button" onPress={() => { void loadProducts(); }} style={styles.retryButton}>
@@ -269,6 +253,7 @@ export default function SellerProductsScreen() {
           </Pressable>
         </View>
       ) : null}
+
       {loading && products.length === 0 ? (
         <View style={styles.loading}>
           <ActivityIndicator color={palette.purple} />
@@ -286,129 +271,124 @@ export default function SellerProductsScreen() {
           ))}
         </View>
       ) : !error ? (
+        /* Estado vacío idéntico al PDF */
         <View style={styles.emptyCard}>
           <View style={styles.emptyIcon}>
-            <SymbolView name={{ ios: 'shippingbox', android: 'inventory_2', web: 'inventory_2' }} tintColor={palette.purple} size={25} />
+            <SymbolView
+              name={{ ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }}
+              tintColor={palette.purple}
+              size={28}
+            />
           </View>
-          <Text style={styles.emptyTitle}>Aún no tienes productos</Text>
-          <Text style={styles.emptyDescription}>Publica tu primera oferta para que aparezca aquí.</Text>
-          <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/publish', params: navigationParams })} style={styles.emptyAction}>
-            <Text style={styles.emptyActionText}>Publicar producto</Text>
-          </Pressable>
+          <Text style={styles.emptyTitle}>Aún no has publicado productos</Text>
+          <Text style={styles.emptyDescription}>
+            Crea tu primera publicación con su foto, precio de rescate, cantidad y horario de recogida.
+          </Text>
         </View>
       ) : null}
-
-      <Modal
-        animationType="slide"
-        onRequestClose={() => {
-          if (!saving) {
-            setEditingProduct(null);
-            setDraft(null);
-          }
-        }}
-        transparent
-        visible={editingProduct !== null && draft !== null}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeading}>
-              <Text style={styles.modalTitle}>Editar producto</Text>
-              <Pressable
-                accessibilityLabel="Cerrar edición"
-                accessibilityRole="button"
-                disabled={saving}
-                onPress={() => { setEditingProduct(null); setDraft(null); setError(''); }}
-                style={styles.modalClose}
-              >
-                <Text style={styles.modalCloseText}>×</Text>
-              </Pressable>
-            </View>
-            {draft ? (
-              <>
-                <TextInput accessibilityLabel="Nombre" onChangeText={(name) => setDraft({ ...draft, name })} placeholder="Nombre" style={styles.input} value={draft.name} />
-                <TextInput accessibilityLabel="Descripción" multiline onChangeText={(description) => setDraft({ ...draft, description })} placeholder="Descripción" style={[styles.input, styles.descriptionInput]} value={draft.description} />
-                <TextInput accessibilityLabel="Categoría" onChangeText={(category) => setDraft({ ...draft, category })} placeholder="Categoría" style={styles.input} value={draft.category} />
-                <View style={styles.inputRow}>
-                  <TextInput accessibilityLabel="Precio" keyboardType="decimal-pad" onChangeText={(price) => setDraft({ ...draft, price })} placeholder="Precio" style={[styles.input, styles.halfInput]} value={draft.price} />
-                  <TextInput accessibilityLabel="Cantidad" keyboardType="number-pad" onChangeText={(quantity) => setDraft({ ...draft, quantity })} placeholder="Cantidad" style={[styles.input, styles.halfInput]} value={draft.quantity} />
-                </View>
-                <View style={styles.inputRow}>
-                  <TextInput accessibilityLabel="Recogida desde" onChangeText={(pickupStart) => setDraft({ ...draft, pickupStart })} placeholder="Desde" style={[styles.input, styles.halfInput]} value={draft.pickupStart} />
-                  <TextInput accessibilityLabel="Recogida hasta" onChangeText={(pickupEnd) => setDraft({ ...draft, pickupEnd })} placeholder="Hasta" style={[styles.input, styles.halfInput]} value={draft.pickupEnd} />
-                </View>
-              </>
-            ) : null}
-            {error ? <Text accessibilityRole="alert" style={styles.errorText}>{error}</Text> : null}
-            <Pressable accessibilityRole="button" disabled={saving} onPress={() => { void saveProduct(); }} style={[styles.saveButton, saving && styles.disabledButton]}>
-              {saving ? <ActivityIndicator color={palette.white} /> : <Text style={styles.saveButtonText}>Guardar cambios</Text>}
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screenContent: { paddingBottom: 24, paddingHorizontal: 16, paddingTop: 22 },
+  screenContent: { paddingBottom: 24, paddingHorizontal: 16, paddingTop: 20 },
   header: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between', marginBottom: 20 },
   headerText: { flex: 1 },
-  title: { color: palette.purpleDark, fontSize: 29, fontWeight: '800', lineHeight: 36 },
-  subtitle: { color: palette.muted, fontSize: 13, lineHeight: 19, marginTop: 5 },
-  addButton: { alignItems: 'center', backgroundColor: palette.purple, borderRadius: 15, height: 48, justifyContent: 'center', marginTop: 10, width: 48 },
-  addButtonText: { color: palette.white, fontSize: 31, fontWeight: '400', lineHeight: 35, marginTop: -2 },
-  summary: { flexDirection: 'row', gap: 8, marginBottom: 25 },
-  summaryCard: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 15, borderWidth: 1, flex: 1, minHeight: 104, justifyContent: 'center', paddingHorizontal: 10, paddingVertical: 12 },
-  summaryLabel: { color: palette.muted, fontSize: 10, fontWeight: '700', lineHeight: 14, minHeight: 28 },
-  summaryValue: { color: palette.purpleDark, fontSize: 22, fontWeight: '900', marginTop: 3 },
-  summaryDetail: { color: palette.muted, fontSize: 9, marginTop: 3 },
-  listHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  listTitle: { color: palette.text, fontSize: 17, fontWeight: '800' },
-  refreshText: { color: palette.purple, fontSize: 11, fontWeight: '700' },
+  title: { color: palette.purpleDark, fontSize: 30, fontWeight: '800', lineHeight: 36 },
+  subtitle: { color: palette.muted, fontSize: 13, lineHeight: 19, marginTop: 4 },
+  addButton: {
+    alignItems: 'center',
+    backgroundColor: palette.purpleDark,
+    borderRadius: 14,
+    height: 48,
+    justifyContent: 'center',
+    marginTop: 4,
+    width: 48,
+    shadowColor: palette.purpleDark,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  addButtonText: { color: palette.white, fontSize: 28, fontWeight: '400', lineHeight: 32, marginTop: -2 },
+  metricsContainer: { marginBottom: 24, gap: 10 },
+  metricsRowTop: { flexDirection: 'row', gap: 10 },
+  metricCard: {
+    backgroundColor: palette.white,
+    borderColor: palette.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  metricCardFull: {
+    backgroundColor: palette.white,
+    borderColor: palette.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  metricCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  metricLabel: { color: palette.muted, fontSize: 12, fontWeight: '600' },
+  metricValue: { color: palette.purpleDark, fontSize: 26, fontWeight: '800' },
+  metricValueLarge: { color: palette.purpleDark, fontSize: 30, fontWeight: '800' },
+  listHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12, marginTop: 4 },
+  listTitle: { color: palette.text, fontSize: 16, fontWeight: '800' },
+  refreshText: { color: palette.purple, fontSize: 12, fontWeight: '700' },
   productList: { gap: 14, paddingBottom: 20 },
-  productCard: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 17, borderWidth: 1, overflow: 'hidden' },
+  productCard: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 18, borderWidth: 1, overflow: 'hidden' },
   productImage: { backgroundColor: '#F4EFF9', height: 160, width: '100%' },
-  imagePlaceholder: { alignItems: 'center', backgroundColor: '#EAF3D8', height: 118, justifyContent: 'center' },
+  imagePlaceholder: { alignItems: 'center', backgroundColor: '#F3EAF7', height: 120, justifyContent: 'center' },
   productContent: { padding: 14 },
   productMeta: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  category: { color: palette.purple, flex: 1, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  statusPill: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 },
+  category: { color: palette.purple, flex: 1, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  statusPill: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 },
   statusActive: { backgroundColor: '#EDF5DC' },
   statusInactive: { backgroundColor: '#F2EEF3' },
   statusText: { fontSize: 10, fontWeight: '800' },
   statusTextActive: { color: '#54825D' },
   statusTextInactive: { color: palette.muted },
-  productName: { color: palette.text, fontSize: 17, fontWeight: '800', marginTop: 9 },
+  productName: { color: palette.text, fontSize: 17, fontWeight: '800', marginTop: 8 },
   description: { color: palette.muted, fontSize: 12, lineHeight: 18, marginTop: 4 },
-  schedule: { color: palette.muted, fontSize: 11, marginTop: 11 },
-  availableQuantity: { color: palette.green, fontSize: 11, fontWeight: '700', marginTop: 5 },
-  actions: { flexDirection: 'row', gap: 9, marginTop: 14 },
+  schedule: { color: palette.muted, fontSize: 11, marginTop: 10 },
+  availableQuantity: { color: palette.green, fontSize: 12, fontWeight: '700', marginTop: 4 },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 14 },
   editButton: { alignItems: 'center', backgroundColor: palette.palePurple, borderRadius: 10, flex: 1, justifyContent: 'center', minHeight: 42 },
-  editButtonText: { color: palette.purple, fontSize: 12, fontWeight: '800' },
+  editButtonText: { color: palette.purple, fontSize: 13, fontWeight: '800' },
   unpublishButton: { alignItems: 'center', backgroundColor: '#FFF0F1', borderRadius: 10, flex: 1, justifyContent: 'center', minHeight: 42 },
-  unpublishButtonText: { color: '#A75252', fontSize: 12, fontWeight: '800' },
+  unpublishButtonText: { color: '#A75252', fontSize: 13, fontWeight: '800' },
   disabledButton: { opacity: 0.5 },
-  emptyCard: { alignItems: 'center', backgroundColor: palette.white, borderColor: palette.border, borderRadius: 18, borderWidth: 1, marginTop: 8, padding: 24 },
-  emptyIcon: { alignItems: 'center', backgroundColor: palette.palePurple, borderRadius: 17, height: 58, justifyContent: 'center', marginBottom: 12, width: 58 },
-  emptyTitle: { color: palette.purpleDark, fontSize: 16, fontWeight: '800', textAlign: 'center' },
-  emptyDescription: { color: palette.muted, fontSize: 12, lineHeight: 18, marginTop: 7, textAlign: 'center' },
-  emptyAction: { alignItems: 'center', backgroundColor: palette.purple, borderRadius: 11, justifyContent: 'center', marginTop: 16, minHeight: 43, paddingHorizontal: 18 },
-  emptyActionText: { color: palette.white, fontSize: 12, fontWeight: '800' },
+  emptyCard: {
+    alignItems: 'center',
+    backgroundColor: palette.white,
+    borderColor: palette.border,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginTop: 6,
+    paddingHorizontal: 24,
+    paddingVertical: 44,
+  },
+  emptyIcon: {
+    alignItems: 'center',
+    backgroundColor: '#F3EAF7',
+    borderRadius: 18,
+    height: 64,
+    justifyContent: 'center',
+    marginBottom: 16,
+    width: 64,
+  },
+  emptyTitle: { color: palette.purpleDark, fontSize: 17, fontWeight: '800', textAlign: 'center' },
+  emptyDescription: { color: palette.muted, fontSize: 13, lineHeight: 19, marginTop: 8, textAlign: 'center' },
   loading: { alignItems: 'center', gap: 11, paddingVertical: 40 },
   messageCard: { backgroundColor: palette.white, borderColor: '#F1CECE', borderRadius: 15, borderWidth: 1, marginVertical: 10, padding: 15 },
   errorText: { color: '#B23B45', fontSize: 12, lineHeight: 18 },
   retryButton: { alignSelf: 'flex-start', marginTop: 10 },
   retryText: { color: palette.purple, fontSize: 12, fontWeight: '800' },
-  modalBackdrop: { backgroundColor: '#1C142466', flex: 1, justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: palette.background, borderTopLeftRadius: 22, borderTopRightRadius: 22, maxHeight: '90%', paddingBottom: 28, paddingHorizontal: 20, paddingTop: 18 },
-  modalHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
-  modalTitle: { color: palette.purpleDark, fontSize: 20, fontWeight: '800' },
-  modalClose: { alignItems: 'center', backgroundColor: palette.palePurple, borderRadius: 18, height: 36, justifyContent: 'center', width: 36 },
-  modalCloseText: { color: palette.purple, fontSize: 25, lineHeight: 29 },
-  input: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 11, borderWidth: 1, color: palette.text, fontSize: 14, marginBottom: 10, minHeight: 46, paddingHorizontal: 12 },
-  descriptionInput: { minHeight: 74, paddingTop: 11, textAlignVertical: 'top' },
-  inputRow: { flexDirection: 'row', gap: 9 },
-  halfInput: { flex: 1, minWidth: 0 },
-  saveButton: { alignItems: 'center', backgroundColor: palette.purple, borderRadius: 11, justifyContent: 'center', marginTop: 5, minHeight: 48 },
-  saveButtonText: { color: palette.white, fontSize: 13, fontWeight: '800' },
 });

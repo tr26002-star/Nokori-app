@@ -1,4 +1,5 @@
-import { getSupabaseClient } from './supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSupabaseClient, hasSupabaseConfig } from './supabase';
 import type { ProductRow } from './supabase.types';
 
 export type Product = {
@@ -26,6 +27,24 @@ export type EditableProduct = Pick<
   'name' | 'description' | 'category' | 'price' | 'quantity' | 'pickupStart' | 'pickupEnd'
 >;
 
+const LOCAL_PRODUCTS_KEY = '@nokori_seller_products';
+
+async function getLocalProducts(): Promise<Product[]> {
+  try {
+    const raw = await AsyncStorage.getItem(LOCAL_PRODUCTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('Error leyendo productos locales:', error);
+    return [];
+  }
+}
+
+async function saveLocalProducts(products: Product[]): Promise<void> {
+  await AsyncStorage.setItem(LOCAL_PRODUCTS_KEY, JSON.stringify(products));
+}
+
 function toProduct(row: ProductRow): Product {
   const price = Number(row.price);
   const quantity = Number(row.quantity);
@@ -49,6 +68,10 @@ function toProduct(row: ProductRow): Product {
 }
 
 export async function getProducts(): Promise<Product[]> {
+  if (!hasSupabaseConfig()) {
+    const local = await getLocalProducts();
+    return local.filter((p) => p.isPublished);
+  }
   const { data, error } = await getSupabaseClient()
     .from('products')
     .select('*')
@@ -68,6 +91,9 @@ async function getCurrentSellerId(): Promise<string> {
 }
 
 export async function getSellerProducts(): Promise<Product[]> {
+  if (!hasSupabaseConfig()) {
+    return getLocalProducts();
+  }
   const sellerId = await getCurrentSellerId();
   const { data, error } = await getSupabaseClient()
     .from('products')
@@ -79,6 +105,30 @@ export async function getSellerProducts(): Promise<Product[]> {
 }
 
 export async function createProduct(product: NewProduct): Promise<Product> {
+  const imageUrl = product.photo
+    ? `data:${product.photo.mimeType};base64,${product.photo.base64}`
+    : null;
+
+  if (!hasSupabaseConfig()) {
+    const local = await getLocalProducts();
+    const newProduct: Product = {
+      id: `prod-${Date.now()}`,
+      name: product.name,
+      description: product.description,
+      category: product.category,
+      price: product.price,
+      quantity: product.quantity,
+      pickupStart: product.pickupStart,
+      pickupEnd: product.pickupEnd,
+      sellerName: product.sellerName || 'Lemus',
+      imageUrl,
+      isPublished: true,
+      createdAt: new Date().toISOString(),
+    };
+    await saveLocalProducts([newProduct, ...local]);
+    return newProduct;
+  }
+
   const supabase = getSupabaseClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();
   if (userError) throw userError;
@@ -90,9 +140,6 @@ export async function createProduct(product: NewProduct): Promise<Product> {
   if (typeof businessName !== 'string' || !businessName.trim()) {
     throw new Error('La cuenta no tiene un nombre de negocio válido. Vuelve a registrarte o contacta con soporte.');
   }
-  const imageUrl = product.photo
-    ? `data:${product.photo.mimeType};base64,${product.photo.base64}`
-    : null;
   const { photo: _photo, ...fields } = product;
   const { data, error } = await supabase
     .from('products')
@@ -117,6 +164,21 @@ export async function createProduct(product: NewProduct): Promise<Product> {
 }
 
 export async function updateSellerProduct(id: string, product: EditableProduct): Promise<Product> {
+  if (!hasSupabaseConfig()) {
+    const local = await getLocalProducts();
+    let updated: Product | null = null;
+    const next = local.map((p) => {
+      if (p.id === id) {
+        updated = { ...p, ...product };
+        return updated;
+      }
+      return p;
+    });
+    if (!updated) throw new Error('No se encontró el producto a actualizar.');
+    await saveLocalProducts(next);
+    return updated;
+  }
+
   const sellerId = await getCurrentSellerId();
   const { data, error } = await getSupabaseClient()
     .from('products')
@@ -138,6 +200,13 @@ export async function updateSellerProduct(id: string, product: EditableProduct):
 }
 
 export async function unpublishSellerProduct(id: string): Promise<void> {
+  if (!hasSupabaseConfig()) {
+    const local = await getLocalProducts();
+    const next = local.map((p) => (p.id === id ? { ...p, isPublished: false } : p));
+    await saveLocalProducts(next);
+    return;
+  }
+
   const sellerId = await getCurrentSellerId();
   const { data, error } = await getSupabaseClient()
     .from('products')

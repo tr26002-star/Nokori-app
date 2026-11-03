@@ -5,6 +5,16 @@ import type { Database } from './supabase.types';
 
 let client: SupabaseClient<Database> | undefined;
 
+export function hasSupabaseConfig(): boolean {
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim();
+  const supabasePublishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
+  return Boolean(
+    supabaseUrl &&
+    supabasePublishableKey &&
+    !supabaseUrl.includes('TU_PROJECT_REF')
+  );
+}
+
 export function getSupabaseClient(): SupabaseClient<Database> {
   if (client) return client;
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim();
