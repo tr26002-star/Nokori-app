@@ -1,8 +1,8 @@
-import { logoutSeller } from '@/services/seller-auth-api';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { logoutSeller } from '@/services/seller-auth-api';
 import { Eyebrow, Screen, palette } from '../shared/screen-ui';
 
 function SettingsRow({ icon, title, detail, onPress, tone = 'purple' }: { icon: 'checkmark.shield' | 'heart'; title: string; detail: string; onPress: () => void; tone?: 'purple' | 'green' }) {
