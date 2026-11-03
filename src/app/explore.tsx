@@ -1,6 +1,6 @@
-import { useLocalSearchParams } from 'expo-router';
+import ClientProductsScreen from '@/screens_new/client/ExploreScreen';
 import SellerProductsScreen from '@/screens_new/seller/SellerProductsScreen';
-import ClientProductsScreen from '@/screens_new/shared/ProductsScreen';
+import { useLocalSearchParams } from 'expo-router';
 
 export default function ExploreScreen() {
   const { role } = useLocalSearchParams<{ role?: string }>();
