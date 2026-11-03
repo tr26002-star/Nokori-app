@@ -23,7 +23,7 @@ Las variables `EXPO_PUBLIC_` se incluyen en la aplicación. La publishable key e
 
 ## 2. Crear la tabla y aplicar RLS
 
-Abre el **SQL Editor** del proyecto, revisa [schema.sql](./supabase/schema.sql) y ejecútalo allí. Este SQL crea `public.products`, habilita RLS y concede lectura pública. Solo usuarios autenticados pueden insertar o actualizar productos cuya columna `seller_id` coincide con su identidad Auth. No concede borrado. El SQL no crea usuarios, no guarda contraseñas en tablas y no usa una clave privilegiada.
+Abre el **SQL Editor** del proyecto, revisa [schema.sql](./supabase/schema.sql) y ejecútalo allí. Este SQL crea `public.products` (incluida la columna `is_published`, necesaria para publicar y listar productos), habilita RLS y concede lectura pública. Si la tabla ya existía sin esa columna, el mismo SQL la agrega sin reemplazar los productos. Solo usuarios autenticados pueden insertar o actualizar productos cuya columna `seller_id` coincide con su identidad Auth. No concede borrado. El SQL no crea usuarios, no guarda contraseñas en tablas y no usa una clave privilegiada.
 
 La tabla almacena `image_url` como texto; la aplicación guarda ahí las fotos como data URL, igual que antes. Conviene usar imágenes pequeñas para evitar registros muy grandes.
 

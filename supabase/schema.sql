@@ -13,6 +13,9 @@ create table if not exists public.products (
   created_at timestamptz not null default now()
 );
 
+alter table public.products
+  add column if not exists is_published boolean not null default true;
+
 create index if not exists products_created_at_idx
   on public.products (created_at desc);
 
