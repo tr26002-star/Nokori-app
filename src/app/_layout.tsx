@@ -12,8 +12,6 @@ export default function RootLayout() {
       <Stack.Screen name="explore" />
       <Stack.Screen name="publish" />
       <Stack.Screen name="reservations" />
-      <Stack.Screen name="product-detail" />
-      <Stack.Screen name="support" />
     </Stack>
   );
 }
