@@ -1,6 +1,6 @@
 # Configuración de Supabase
 
-La aplicación usa Supabase Auth para las cuentas de vendedor y PostgreSQL para los productos. No se conecta a MockAPI ni necesita iniciar el backend local para estas funciones.
+La aplicación usa Supabase Auth para las cuentas de vendedor y PostgreSQL para productos y reservas. No se conecta a MockAPI ni necesita iniciar el backend local para estas funciones.
 
 ## 1. Crear el proyecto y configurar las variables
 
@@ -23,7 +23,9 @@ Las variables `EXPO_PUBLIC_` se incluyen en la aplicación. La publishable key e
 
 ## 2. Crear la tabla y aplicar RLS
 
-Abre el **SQL Editor** del proyecto, revisa [schema.sql](./supabase/schema.sql) y ejecútalo allí. Este SQL crea `public.products` (incluida la columna `is_published`, necesaria para publicar y listar productos), habilita RLS y concede lectura pública. Si la tabla ya existía sin esa columna, el mismo SQL la agrega sin reemplazar los productos. Solo usuarios autenticados pueden insertar o actualizar productos cuya columna `seller_id` coincide con su identidad Auth. No concede borrado. El SQL no crea usuarios, no guarda contraseñas en tablas y no usa una clave privilegiada.
+Para una instalación nueva, abre el **SQL Editor** del proyecto y ejecuta [schema.sql](./supabase/schema.sql). Para una instalación existente, ejecuta la migración [20261104_add_atomic_reservations.sql](./supabase/migrations/20261104_add_atomic_reservations.sql) después de la migración de `is_published`. Esta actualización crea `public.reservations`, permite al vendedor leer y actualizar solo el estado de sus reservas, y agrega `reserve_product`, una función transaccional que descuenta inventario y registra el pedido en una única operación. La función valida disponibilidad y datos del cliente para evitar sobreventa incluso con reservas simultáneas. Acepta llamadas públicas únicamente para reservar; los datos de las reservas no se pueden consultar anónimamente.
+
+La tabla `public.products` concede lectura pública y solo usuarios autenticados pueden insertar o actualizar productos cuya columna `seller_id` coincide con su identidad Auth. La cantidad almacenada puede llegar a cero después de las reservas, aunque el formulario del vendedor solo permite publicar cantidades iniciales positivas. No se concede borrado. El SQL no crea usuarios, no guarda contraseñas en tablas y no usa una clave privilegiada.
 
 La tabla almacena `image_url` como texto; la aplicación guarda ahí las fotos como data URL, igual que antes. Conviene usar imágenes pequeñas para evitar registros muy grandes.
 
@@ -37,6 +39,6 @@ Las cuentas y publicaciones que existan en la API local o MockAPI no se migran a
 
 ## SQL que se aplicará
 
-Antes de ejecutar nada, inspecciona el SQL completo en [supabase/schema.sql](./supabase/schema.sql). No se ha ejecutado ningún cambio remoto. El SQL crea una tabla e índice si no existen, habilita RLS, reemplaza las tres políticas con nombres propios y establece permisos para `anon` y `authenticated`.
+Antes de ejecutar nada, inspecciona el SQL completo en [supabase/schema.sql](./supabase/schema.sql). No se ha ejecutado ningún cambio remoto desde este entorno. El SQL prepara las tablas e índices, habilita RLS, define las políticas de productos y reservas, y establece permisos para `anon` y `authenticated`.
 
-El backend local se conserva en el repositorio, pero la aplicación no lo usa para Auth ni productos.
+El backend local se conserva en el repositorio, pero la aplicación no lo usa para Auth, productos ni reservas.

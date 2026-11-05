@@ -22,6 +22,7 @@ type FilterTab = 'all' | 'pending' | 'delivered';
 export default function SellerReservationsScreen() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [searchCode, setSearchCode] = useState('');
 
@@ -30,8 +31,10 @@ export default function SellerReservationsScreen() {
     try {
       const data = await getSellerReservations();
       setReservations(data);
+      setLoadError('');
     } catch (err) {
       console.error('Error al cargar reservas:', err);
+      setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar las reservas.');
     } finally {
       setLoading(false);
     }
@@ -71,8 +74,11 @@ export default function SellerReservationsScreen() {
                 '¡Pedido entregado!',
                 `El ticket #${reservation.ticketCode} fue marcado como entregado exitosamente.`
               );
-            } catch {
-              Alert.alert('Error', 'No se pudo actualizar el estado de la reserva.');
+            } catch (cause) {
+              Alert.alert(
+                'Error',
+                cause instanceof Error ? cause.message : 'No se pudo actualizar el estado de la reserva.',
+              );
             }
           },
         },
@@ -152,6 +158,14 @@ export default function SellerReservationsScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator color={palette.purple} size="large" />
           <Text style={styles.loadingText}>Cargando reservas...</Text>
+        </View>
+      ) : loadError ? (
+        <View accessibilityRole="alert" style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>No pudimos cargar las reservas</Text>
+          <Text style={styles.emptyDescription}>{loadError}</Text>
+          <Pressable accessibilityRole="button" onPress={() => { void loadReservations(); }} style={styles.retryButton}>
+            <Text style={styles.retryButtonText}>Intentar de nuevo</Text>
+          </Pressable>
         </View>
       ) : reservations.length === 0 || filteredReservations.length === 0 ? (
         /* Estado Vacío idéntico al PDF */
@@ -401,4 +415,6 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: palette.purpleDark, fontSize: 17, fontWeight: '800', textAlign: 'center' },
   emptyDescription: { color: palette.muted, fontSize: 13, lineHeight: 19, marginTop: 8, textAlign: 'center' },
+  retryButton: { alignItems: 'center', backgroundColor: palette.purple, borderRadius: 10, marginTop: 14, minHeight: 40, justifyContent: 'center', paddingHorizontal: 16 },
+  retryButtonText: { color: palette.white, fontSize: 12, fontWeight: '800' },
 });

@@ -81,6 +81,21 @@ export async function getProducts(): Promise<Product[]> {
   return data.map(toProduct);
 }
 
+export async function getProduct(id: string): Promise<Product | null> {
+  if (!hasSupabaseConfig()) {
+    const local = await getLocalProducts();
+    return local.find((product) => product.id === id && product.isPublished) ?? null;
+  }
+  const { data, error } = await getSupabaseClient()
+    .from('products')
+    .select('*')
+    .eq('id', id)
+    .eq('is_published', true)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? toProduct(data) : null;
+}
+
 async function getCurrentSellerId(): Promise<string> {
   const { data, error } = await getSupabaseClient().auth.getUser();
   if (error) throw error;

@@ -27,6 +27,7 @@ function ProductCard({
   onUnpublish: () => void;
 }) {
   const isAvailable = product.isPublished && product.quantity > 0;
+  const isSoldOut = product.isPublished && product.quantity === 0;
   return (
     <View style={styles.productCard}>
       {product.imageUrl ? (
@@ -39,9 +40,9 @@ function ProductCard({
       <View style={styles.productContent}>
         <View style={styles.productMeta}>
           <Text style={styles.category}>{product.category}</Text>
-          <View style={[styles.statusPill, isAvailable ? styles.statusActive : styles.statusInactive]}>
-            <Text style={[styles.statusText, isAvailable ? styles.statusTextActive : styles.statusTextInactive]}>
-              {isAvailable ? 'Publicado' : 'Despublicado'}
+          <View style={[styles.statusPill, isAvailable ? styles.statusActive : isSoldOut ? styles.statusSoldOut : styles.statusInactive]}>
+            <Text style={[styles.statusText, isAvailable ? styles.statusTextActive : isSoldOut ? styles.statusTextSoldOut : styles.statusTextInactive]}>
+              {isSoldOut ? 'Agotado' : product.isPublished ? 'Publicado' : 'Despublicado'}
             </Text>
           </View>
         </View>
@@ -351,9 +352,11 @@ const styles = StyleSheet.create({
   category: { color: palette.purple, flex: 1, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
   statusPill: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 },
   statusActive: { backgroundColor: '#EDF5DC' },
+  statusSoldOut: { backgroundColor: '#FFF0F1' },
   statusInactive: { backgroundColor: '#F2EEF3' },
   statusText: { fontSize: 10, fontWeight: '800' },
   statusTextActive: { color: '#54825D' },
+  statusTextSoldOut: { color: '#A75252' },
   statusTextInactive: { color: palette.muted },
   productName: { color: palette.text, fontSize: 17, fontWeight: '800', marginTop: 8 },
   description: { color: palette.muted, fontSize: 12, lineHeight: 18, marginTop: 4 },
