@@ -37,7 +37,7 @@ const clientBottomNavItems = [
   { route: '/profile', label: 'Perfil', ios: 'person.crop.circle.fill', icon: 'account_circle' },
 ] as const;
 
-export function Screen({ children, contentStyle, showBottomNav = false, showBrand = true, showDecorations = true }: { children: ReactNode; contentStyle?: ViewStyle; showBottomNav?: boolean; showBrand?: boolean; showDecorations?: boolean }) {
+export function Screen({ children, contentStyle, showBottomNav = false, showBrand = true, showDecorations = true, activeNavRoute }: { children: ReactNode; contentStyle?: ViewStyle; showBottomNav?: boolean; showBrand?: boolean; showDecorations?: boolean; activeNavRoute?: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const { role, phone, email, businessName } = useLocalSearchParams<{
@@ -75,7 +75,7 @@ export function Screen({ children, contentStyle, showBottomNav = false, showBran
       {showBottomNav ? (
         <View style={styles.bottomNav}>
           {bottomNavItems.map((item) => {
-            const active = pathname === item.route;
+            const active = pathname === item.route || activeNavRoute === item.route;
             return (
               <Pressable
                 accessibilityRole="button"

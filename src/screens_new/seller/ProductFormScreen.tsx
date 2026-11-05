@@ -13,17 +13,8 @@ import {
   View,
   type TextInputProps,
 } from 'react-native';
+import { productCategories } from '../shared/product-categories';
 import { Screen, palette } from '../shared/screen-ui';
-
-const categories = [
-  'Panadería',
-  'Pupusería',
-  'Frutas y Verduras',
-  'Comida preparada',
-  'Postres',
-  'Lácteos',
-  'Otros',
-];
 
 type SelectedPhoto = { uri: string; base64: string; mimeType: string };
 
@@ -75,7 +66,7 @@ export default function ProductFormScreen() {
 
   const [name, setName] = useState(params.name || '');
   const [description, setDescription] = useState(params.description || '');
-  const [category, setCategory] = useState(params.category || categories[0]);
+  const [category, setCategory] = useState(params.category || productCategories[0]);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [normalPrice, setNormalPrice] = useState('');
   const [rescuePrice, setRescuePrice] = useState(params.price || '');
@@ -238,7 +229,7 @@ export default function ProductFormScreen() {
         </Pressable>
         {categoryOpen ? (
           <View style={styles.categoryOptions}>
-            {categories.map((item) => (
+            {productCategories.map((item) => (
               <Pressable
                 accessibilityRole="button"
                 key={item}

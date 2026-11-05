@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import nodemailer from 'nodemailer';
 
 const backendDir = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(backendDir, 'data');
@@ -14,6 +15,18 @@ const port = Number(process.env.PORT || 4000);
 const maxRequestBytes = 6_000_000;
 const passwordHashBytes = 64;
 const derivePassword = promisify(scrypt);
+const gmailUser = process.env.GMAIL_USER?.trim();
+const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, '');
+const supportEmail = process.env.SUPPORT_EMAIL?.trim() || 'soportenokory@gmail.com';
+const supportTransporter = gmailUser && gmailAppPassword
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: gmailUser, pass: gmailAppPassword },
+    })
+  : undefined;
+const supportRateLimit = new Map();
+const supportRateWindowMs = 10 * 60 * 1000;
+const supportRateLimitCount = 3;
 const allowedImages = new Map([
   ['image/jpeg', 'jpg'],
   ['image/png', 'png'],
@@ -51,6 +64,20 @@ function send(response, status, payload, extraHeaders = {}) {
 
 function sendError(response, status, message) {
   send(response, status, { message });
+}
+
+function isRateLimitedSupportRequest(request) {
+  const now = Date.now();
+  const key = request.socket.remoteAddress || 'unknown';
+  const recentRequests = (supportRateLimit.get(key) || [])
+    .filter((timestamp) => now - timestamp < supportRateWindowMs);
+  if (recentRequests.length >= supportRateLimitCount) {
+    supportRateLimit.set(key, recentRequests);
+    return true;
+  }
+  recentRequests.push(now);
+  supportRateLimit.set(key, recentRequests);
+  return false;
 }
 
 async function readJson(request) {
@@ -166,6 +193,76 @@ const server = createServer(async (request, response) => {
         .filter((product) => product.isActive !== false)
         .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
       send(response, 200, { products });
+      return;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/support') {
+      if (isRateLimitedSupportRequest(request)) {
+        sendError(response, 429, 'Se alcanzó el límite de envíos. Inténtalo de nuevo en unos minutos.');
+        return;
+      }
+
+      const payload = await readJson(request);
+      if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        sendError(response, 400, 'Revisa los datos del formulario de soporte.');
+        return;
+      }
+
+      const type = payload.type === 'Falla' || payload.type === 'Mejora' ? payload.type : '';
+      const role = payload.role === 'seller' || payload.role === 'client' ? payload.role : '';
+      const name = typeof payload.name === 'string' ? payload.name.trim().replace(/[\r\n]/g, ' ') : '';
+      const comment = typeof payload.comment === 'string' ? payload.comment.trim() : '';
+      const email = typeof payload.email === 'string' ? payload.email.trim() : '';
+      const phone = typeof payload.phone === 'string' ? payload.phone.trim() : '';
+      if (!type || !role || name.length < 1 || name.length > 120 || comment.length < 10 || comment.length > 5000) {
+        sendError(response, 400, 'Revisa el tipo, nombre y comentario. El comentario debe tener entre 10 y 5000 caracteres.');
+        return;
+      }
+      if (role === 'seller' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        sendError(response, 400, 'Escribe un correo electrónico válido para el vendedor.');
+        return;
+      }
+      if (role === 'client' && !/^\d{8}$/.test(phone)) {
+        sendError(response, 400, 'El teléfono del cliente debe tener 8 dígitos de El Salvador.');
+        return;
+      }
+      if (!supportTransporter || !gmailUser) {
+        sendError(response, 503, 'El servicio de correo no está configurado en el servidor.');
+        return;
+      }
+
+      const sentAt = new Date();
+      const formattedDate = new Intl.DateTimeFormat('es-SV', {
+        dateStyle: 'long',
+        timeStyle: 'short',
+        timeZone: 'America/El_Salvador',
+      }).format(sentAt);
+      const roleLabel = role === 'seller' ? 'Vendedor' : 'Cliente';
+      const contactLabel = role === 'seller' ? 'Correo electrónico' : 'Teléfono';
+      const contactValue = role === 'seller' ? email : `+503 ${phone}`;
+      const subject = `[Nokory Soporte] ${type} - ${name}`;
+      const text = [
+        `Tipo: ${type}`,
+        `Nombre: ${name}`,
+        `Rol: ${roleLabel}`,
+        `${contactLabel}: ${contactValue}`,
+        `Comentario: ${comment}`,
+        `Fecha y hora: ${formattedDate} (hora de El Salvador)`,
+      ].join('\n');
+
+      try {
+        await supportTransporter.sendMail({
+          from: gmailUser,
+          to: supportEmail,
+          subject,
+          text,
+        });
+      } catch (error) {
+        console.error('No se pudo enviar el reporte de soporte:', error);
+        sendError(response, 502, 'No se pudo enviar el reporte. Inténtalo de nuevo más tarde.');
+        return;
+      }
+      send(response, 200, { message: 'Tu comentario fue enviado a soporte.' });
       return;
     }
 
