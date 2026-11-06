@@ -1,49 +1,107 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
+  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { Eyebrow, PageHeading, Panel, PrimaryButton, Screen, palette } from './screen-ui';
+import { sendSupportComment } from '@/services/support-api';
+import { Eyebrow, PageHeading, Panel, Screen, palette } from './screen-ui';
 
-const SUPPORT_TOPICS = [
-  'Problema con un pedido o ticket',
-  'Duda sobre el funcionamiento',
-  'Reportar un error técnico',
-  'Compartir una sugerencia o mejora',
-];
+const COMMENT_MAX_LENGTH = 5000;
+const SUBMISSION_COOLDOWN_SECONDS = 30;
+const COMMENT_TYPES = ['Falla', 'Mejora'] as const;
+type CommentType = typeof COMMENT_TYPES[number];
+type SupportField = 'type' | 'name' | 'email' | 'phone' | 'comment';
+type SupportErrors = Partial<Record<SupportField, string>>;
 
 export default function SupportScreen() {
   const router = useRouter();
-  const [topic, setTopic] = useState(SUPPORT_TOPICS[0]);
-  const [message, setMessage] = useState('');
-  const [topicOpen, setTopicOpen] = useState(false);
+  const { role: roleParam, email: emailParam, phone: phoneParam } = useLocalSearchParams<{
+    role?: string;
+    email?: string;
+    phone?: string;
+  }>();
+  const role = roleParam === 'seller' ? 'seller' : 'client';
+  const isSeller = role === 'seller';
+  const [type, setType] = useState<CommentType>('Falla');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState(typeof emailParam === 'string' ? emailParam : '');
+  const [phone, setPhone] = useState(typeof phoneParam === 'string' ? phoneParam.replace(/\D/g, '').slice(-8) : '');
+  const [comment, setComment] = useState('');
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [errors, setErrors] = useState<SupportErrors>({});
+  const [submitError, setSubmitError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const submittingRef = useRef(false);
 
-  function handleSend() {
-    if (!message.trim()) {
-      Alert.alert('Falta mensaje', 'Por favor escribe tu duda o el problema que deseas reportar.');
-      return;
+  useEffect(() => {
+    if (cooldown <= 0) return undefined;
+    const timer = setTimeout(() => setCooldown((value) => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
+
+  function validateForm(): boolean {
+    const nextErrors: SupportErrors = {};
+    if (!COMMENT_TYPES.includes(type)) nextErrors.type = 'Selecciona Falla o Mejora.';
+    if (!name.trim()) nextErrors.name = 'Escribe tu nombre.';
+    if (isSeller) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        nextErrors.email = 'Escribe un correo electrónico válido.';
+      }
+    } else if (!/^\d{8}$/.test(phone.trim())) {
+      nextErrors.phone = 'Ingresa un número de El Salvador de 8 dígitos.';
     }
+    if (comment.trim().length < 10) {
+      nextErrors.comment = 'El comentario debe tener al menos 10 caracteres.';
+    }
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  }
 
-    Alert.alert(
-      '¡Mensaje enviado!',
-      'Hemos recibido tu reporte. El equipo de soporte de Nokori se pondrá en contacto pronto.',
-      [
-        {
-          text: 'Aceptar',
-          onPress: () => {
-            setMessage('');
-            if (router.canGoBack()) router.back();
-            else router.replace('/profile');
-          },
-        },
-      ]
-    );
+  async function handleSend() {
+    if (submittingRef.current || cooldown > 0 || !validateForm()) return;
+
+    submittingRef.current = true;
+    setSubmitting(true);
+    setSubmitError('');
+    setSuccess('');
+    try {
+      await sendSupportComment({
+        type,
+        name: name.trim(),
+        role,
+        ...(isSeller ? { email: email.trim() } : { phone: phone.trim() }),
+        comment: comment.trim(),
+      });
+      setType('Falla');
+      setName('');
+      setEmail('');
+      setPhone('');
+      setComment('');
+      setErrors({});
+      setSuccess('Tu comentario fue enviado correctamente. Gracias por ayudarnos a mejorar Nokory.');
+      setCooldown(SUBMISSION_COOLDOWN_SECONDS);
+    } catch (cause) {
+      setSubmitError(cause instanceof Error
+        ? cause.message
+        : 'No se pudo enviar el comentario. Verifica tu conexión e inténtalo de nuevo.');
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  }
+
+  function clearFieldError(field: SupportField) {
+    setErrors((current) => ({ ...current, [field]: undefined }));
+    setSubmitError('');
+    setSuccess('');
   }
 
   return (
@@ -51,62 +109,148 @@ export default function SupportScreen() {
       <Eyebrow>Nokory · Soporte y Ayuda</Eyebrow>
       <PageHeading
         title="Centro de ayuda"
-        description="¿Tienes alguna duda con un producto, inconveniente con un pedido o sugerencia para mejorar Nokori? Estamos para ayudarte."
+        description="Cuéntanos sobre una falla o una idea para mejorar Nokory. Revisaremos tu comentario."
       />
 
       <Panel>
-        <Text style={styles.sectionTitle}>Enviar un mensaje</Text>
+        <Text style={styles.sectionTitle}>Enviar un comentario</Text>
 
-        {/* Motivo */}
-        <Text style={styles.fieldLabel}>Motivo de contacto</Text>
+        <Text style={styles.fieldLabel}>Tipo de comentario</Text>
         <Pressable
           accessibilityRole="button"
-          onPress={() => setTopicOpen(!topicOpen)}
+          accessibilityLabel={`Tipo de comentario: ${type}`}
+          accessibilityState={{ expanded: typeOpen }}
+          onPress={() => setTypeOpen(!typeOpen)}
           style={styles.selectButton}
         >
-          <Text style={styles.selectText}>{topic}</Text>
+          <Text style={styles.selectText}>{type}</Text>
           <SymbolView
             name={{ ios: 'chevron.down', android: 'keyboard_arrow_down', web: 'keyboard_arrow_down' }}
             tintColor={palette.text}
             size={16}
           />
         </Pressable>
-
-        {topicOpen ? (
+        {typeOpen ? (
           <View style={styles.optionsList}>
-            {SUPPORT_TOPICS.map((item) => (
+            {COMMENT_TYPES.map((item) => (
               <Pressable
+                accessibilityRole="button"
                 key={item}
                 onPress={() => {
-                  setTopic(item);
-                  setTopicOpen(false);
+                  setType(item);
+                  setTypeOpen(false);
+                  clearFieldError('type');
                 }}
                 style={styles.optionItem}
               >
-                <Text style={[styles.selectText, item === topic && styles.selectedTopic]}>
-                  {item}
-                </Text>
+                <Text style={[styles.selectText, item === type && styles.selectedType]}>{item}</Text>
               </Pressable>
             ))}
           </View>
         ) : null}
+        {errors.type ? <Text accessibilityRole="alert" style={styles.fieldError}>{errors.type}</Text> : null}
 
-        {/* Mensaje */}
-        <Text style={styles.fieldLabel}>Descripción del problema o sugerencia</Text>
+        <Text style={styles.fieldLabel}>Nombre</Text>
+        <TextInput
+          autoCapitalize="words"
+          autoComplete="name"
+          maxLength={120}
+          onChangeText={(value) => {
+            setName(value);
+            clearFieldError('name');
+          }}
+          placeholder="Escribe tu nombre"
+          placeholderTextColor="#A39BA7"
+          style={styles.input}
+          value={name}
+        />
+        {errors.name ? <Text accessibilityRole="alert" style={styles.fieldError}>{errors.name}</Text> : null}
+
+        {isSeller ? (
+          <>
+            <Text style={styles.fieldLabel}>Correo electrónico</Text>
+            <TextInput
+              autoCapitalize="none"
+              autoComplete="email"
+              keyboardType="email-address"
+              onChangeText={(value) => {
+                setEmail(value);
+                clearFieldError('email');
+              }}
+              placeholder="nombre@correo.com"
+              placeholderTextColor="#A39BA7"
+              style={styles.input}
+              value={email}
+            />
+            {errors.email ? <Text accessibilityRole="alert" style={styles.fieldError}>{errors.email}</Text> : null}
+          </>
+        ) : (
+          <>
+            <Text style={styles.fieldLabel}>Número de teléfono</Text>
+            <View style={styles.phoneRow}>
+              <View style={styles.countryCode}><Text style={styles.countryCodeText}>+503</Text></View>
+              <TextInput
+                accessibilityLabel="Número telefónico salvadoreño de 8 dígitos"
+                autoComplete="tel-national"
+                keyboardType="phone-pad"
+                maxLength={8}
+                onChangeText={(value) => {
+                  setPhone(value.replace(/\D/g, '').slice(0, 8));
+                  clearFieldError('phone');
+                }}
+                placeholder="00000000"
+                placeholderTextColor="#A39BA7"
+                style={[styles.input, styles.phoneInput]}
+                value={phone}
+              />
+            </View>
+            {errors.phone ? <Text accessibilityRole="alert" style={styles.fieldError}>{errors.phone}</Text> : null}
+          </>
+        )}
+
+        <Text style={styles.fieldLabel}>Comentario</Text>
         <TextInput
           multiline
-          numberOfLines={4}
-          placeholder="Escribe los detalles aquí..."
+          maxLength={COMMENT_MAX_LENGTH}
+          onChangeText={(value) => {
+            setComment(value);
+            clearFieldError('comment');
+          }}
+          numberOfLines={5}
+          placeholder="Describe la falla o la mejora que propones..."
           placeholderTextColor="#A39BA7"
-          value={message}
-          onChangeText={setMessage}
-          style={styles.textArea}
+          style={[styles.input, styles.textArea]}
+          textAlignVertical="top"
+          value={comment}
         />
+        <View style={styles.commentMeta}>
+          {errors.comment
+            ? <Text accessibilityRole="alert" style={styles.fieldError}>{errors.comment}</Text>
+            : <View />}
+          <Text style={styles.characterCount}>{comment.length}/{COMMENT_MAX_LENGTH}</Text>
+        </View>
 
-        <PrimaryButton label="Enviar reporte a soporte" onPress={handleSend} />
+        {submitError ? <Text accessibilityRole="alert" style={styles.submitError}>{submitError}</Text> : null}
+        {success ? <Text accessibilityRole="alert" style={styles.successMessage}>{success}</Text> : null}
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: submitting || cooldown > 0, busy: submitting }}
+          disabled={submitting || cooldown > 0}
+          onPress={() => { void handleSend(); }}
+          style={({ pressed }) => [
+            styles.submitButton,
+            pressed && !submitting && cooldown === 0 && styles.submitPressed,
+            (submitting || cooldown > 0) && styles.submitDisabled,
+          ]}
+        >
+          {submitting ? <ActivityIndicator color={palette.white} size="small" /> : null}
+          <Text style={styles.submitButtonText}>
+            {submitting ? 'Enviando...' : cooldown > 0 ? `Espera ${cooldown} s para enviar` : 'Enviar comentario'}
+          </Text>
+        </Pressable>
       </Panel>
 
-      {/* Preguntas frecuentes rápidas */}
       <Panel>
         <Text style={styles.sectionTitle}>Preguntas frecuentes</Text>
         <View style={styles.faqItem}>
@@ -140,6 +284,17 @@ export default function SupportScreen() {
 const styles = StyleSheet.create({
   sectionTitle: { color: palette.purpleDark, fontSize: 16, fontWeight: '800', marginBottom: 14 },
   fieldLabel: { color: palette.text, fontSize: 13, fontWeight: '700', marginBottom: 6, marginTop: 4 },
+  input: {
+    backgroundColor: palette.white,
+    borderColor: palette.border,
+    borderRadius: 11,
+    borderWidth: 1,
+    color: palette.text,
+    fontSize: 14,
+    minHeight: 46,
+    paddingHorizontal: 12,
+    marginBottom: 4,
+  },
   selectButton: {
     alignItems: 'center',
     backgroundColor: palette.white,
@@ -150,7 +305,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     minHeight: 46,
     paddingHorizontal: 12,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   selectText: { color: palette.text, fontSize: 13 },
   optionsList: {
@@ -158,25 +313,45 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     borderRadius: 11,
     borderWidth: 1,
-    marginBottom: 12,
-    marginTop: -8,
+    marginBottom: 8,
+    marginTop: -4,
     overflow: 'hidden',
   },
   optionItem: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12 },
-  selectedTopic: { color: palette.purple, fontWeight: '800' },
-  textArea: {
-    backgroundColor: palette.white,
+  selectedType: { color: palette.purple, fontWeight: '800' },
+  phoneRow: { alignItems: 'center', flexDirection: 'row', gap: 8, marginBottom: 4 },
+  countryCode: {
+    alignItems: 'center',
+    backgroundColor: palette.palePurple,
     borderColor: palette.border,
     borderRadius: 11,
     borderWidth: 1,
-    color: palette.text,
-    fontSize: 14,
-    minHeight: 90,
+    justifyContent: 'center',
+    minHeight: 46,
     paddingHorizontal: 12,
-    paddingTop: 10,
-    textAlignVertical: 'top',
-    marginBottom: 8,
   },
+  countryCodeText: { color: palette.purpleDark, fontSize: 14, fontWeight: '700' },
+  phoneInput: { flex: 1, marginBottom: 0 },
+  textArea: { minHeight: 112, paddingTop: 10, textAlignVertical: 'top' },
+  commentMeta: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between', minHeight: 22 },
+  characterCount: { color: palette.muted, fontSize: 11, marginLeft: 'auto', marginTop: 4 },
+  fieldError: { color: '#B23B45', fontSize: 12, lineHeight: 17, marginBottom: 8 },
+  submitError: { color: '#B23B45', fontSize: 13, lineHeight: 18, marginBottom: 6 },
+  successMessage: { color: '#527346', fontSize: 13, lineHeight: 19, marginBottom: 6 },
+  submitButton: {
+    alignItems: 'center',
+    backgroundColor: palette.purple,
+    borderRadius: 12,
+    flexDirection: 'row',
+    gap: 9,
+    justifyContent: 'center',
+    minHeight: 54,
+    marginTop: 14,
+    paddingHorizontal: 20,
+  },
+  submitButtonText: { color: palette.white, fontSize: 15, fontWeight: '800' },
+  submitPressed: { opacity: 0.86, transform: [{ scale: 0.99 }] },
+  submitDisabled: { opacity: 0.5 },
   faqItem: { marginVertical: 4 },
   faqQuestion: { color: palette.purpleDark, fontSize: 13, fontWeight: '800', marginBottom: 4 },
   faqAnswer: { color: palette.muted, fontSize: 12, lineHeight: 18 },

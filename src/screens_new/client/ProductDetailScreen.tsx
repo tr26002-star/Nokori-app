@@ -138,8 +138,8 @@ export default function ProductDetailScreen() {
               <Image accessibilityLabel={product.name} source={{ uri: product.imageUrl }} style={styles.productImage} />
             ) : (
               <View style={styles.imagePlaceholder}>
-                <SymbolView name={{ ios: 'leaf.fill', android: 'eco', web: 'eco' }} tintColor={palette.green} size={34} />
-                <Text style={styles.placeholderLabel}>Pack Nokory</Text>
+                <SymbolView name={{ ios: 'photo', android: 'image', web: 'image' }} tintColor="#84AF7A" size={42} />
+                <Text style={styles.placeholderLabel}>Sin foto disponible</Text>
               </View>
             )}
             <View style={styles.productContent}>

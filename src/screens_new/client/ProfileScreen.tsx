@@ -61,7 +61,20 @@ export default function ProfileScreen() {
         <Text style={styles.sectionLabel}>Configuración</Text>
         <Text style={styles.sectionDescription}>{isSeller ? 'Tu cuenta está vinculada al perfil de vendedor con el que te registraste.' : 'Tu cuenta está lista para empezar a ahorrar o compartir.'}</Text>
         <SettingsRow icon="checkmark.shield" title="Normas de la comunidad" detail="Conoce las reglas para clientes y vendedores" onPress={() => router.push('/norms')} />
-        <SettingsRow icon="heart" title="Soporte" detail="Reporta un problema o comparte una mejora" onPress={() => router.push('/support')} tone="green" />
+        <SettingsRow
+          icon="heart"
+          title="Soporte"
+          detail="Reporta un problema o comparte una mejora"
+          onPress={() => router.push({
+            pathname: '/support',
+            params: {
+              role: isSeller ? 'seller' : 'client',
+              ...(phone ? { phone } : {}),
+              ...(email ? { email } : {}),
+            },
+          })}
+          tone="green"
+        />
         {signOutError ? <Text accessibilityRole="alert" style={styles.error}>{signOutError}</Text> : null}
         <Pressable accessibilityRole="button" disabled={signingOut} onPress={() => { void signOut(); }} style={styles.signOut}>
           <View style={styles.signOutContent}>
