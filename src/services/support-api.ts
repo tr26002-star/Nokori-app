@@ -2,15 +2,14 @@ export type SupportComment = {
   type: 'Falla' | 'Mejora';
   name: string;
   role: 'seller' | 'client';
-  email?: string;
-  phone?: string;
+  phone: string;
   comment: string;
 };
 
 export async function sendSupportComment(comment: SupportComment): Promise<void> {
   const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL?.trim().replace(/\/+$/, '');
   if (!backendUrl) {
-    throw new Error('Configura EXPO_PUBLIC_BACKEND_URL para conectar con el servidor de soporte.');
+    throw new Error('Configura EXPO_PUBLIC_BACKEND_URL en el archivo .env con la dirección accesible del backend de soporte.');
   }
 
   let response: Response;

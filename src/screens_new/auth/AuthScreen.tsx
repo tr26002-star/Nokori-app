@@ -1,7 +1,13 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  getClientAuthErrorMessage,
+  getPersistedClientEmail,
+  loginClient,
+  registerClient,
+} from '@/services/client-auth-api';
 import { loginSeller, registerSeller } from '@/services/seller-auth-api';
 import { Eyebrow, Field, PageHeading, PrimaryButton, Screen, palette } from '../shared/screen-ui';
 
@@ -18,7 +24,6 @@ export default function AuthScreen() {
   const { role } = useLocalSearchParams<{ role?: string }>();
   const isSeller = role === 'seller';
   const [isRegistering, setIsRegistering] = useState(false);
-  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [password, setPassword] = useState('');
@@ -30,6 +35,21 @@ export default function AuthScreen() {
   const missingPasswordRequirements = isRegistering && password.length > 0
     ? getPasswordRequirements(password)
     : [];
+
+  useEffect(() => {
+    if (isSeller) return;
+    let active = true;
+    void getPersistedClientEmail()
+      .then((persistedEmail) => {
+        if (active && persistedEmail) {
+          router.replace({ pathname: '/profile', params: { role: 'client', email: persistedEmail } });
+        }
+      })
+      .catch((cause) => {
+        if (active) setError(getClientAuthErrorMessage(cause, 'No se pudo restaurar la sesión de cliente.'));
+      });
+    return () => { active = false; };
+  }, [isSeller, router]);
 
   async function continueToProfile() {
     if (isSeller) {
@@ -93,12 +113,46 @@ export default function AuthScreen() {
       return;
     }
 
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length !== 8) {
-      setError('Ingresa tu número salvadoreño de 8 dígitos.');
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError('Escribe un correo electrónico válido.');
       return;
     }
-    router.push({ pathname: '/profile', params: { role: 'client', phone: `+503 ${digits}` } });
+
+    if (!password) {
+      setError('Escribe la contraseña de tu cuenta.');
+      return;
+    }
+    if (isRegistering && Array.from(password).length < 8) {
+      setError('La contraseña debe tener al menos 8 caracteres.');
+      return;
+    }
+
+    setSubmitting(true);
+    setError('');
+    setSuccess('');
+    try {
+      if (isRegistering) {
+        const result = await registerClient(normalizedEmail, password);
+        setPassword('');
+        setShowPassword(false);
+        if (result.emailConfirmationRequired) {
+          setIsRegistering(false);
+          setSuccess('Cuenta creada. Confirma tu correo y luego inicia sesión con tu contraseña.');
+        } else {
+          router.push({ pathname: '/profile', params: { role: 'client', email: result.email } });
+        }
+      } else {
+        const authenticatedEmail = await loginClient(normalizedEmail, password);
+        setPassword('');
+        setShowPassword(false);
+        router.push({ pathname: '/profile', params: { role: 'client', email: authenticatedEmail } });
+      }
+    } catch (cause) {
+      setError(getClientAuthErrorMessage(cause, 'No se pudo validar tu cuenta de cliente.'));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -170,21 +224,41 @@ export default function AuthScreen() {
           </>
         ) : (
           <>
-            <Text style={styles.fieldLabel}>Número telefónico</Text>
-            <View style={styles.phoneRow}>
-              <View style={styles.countryCode}><Text style={styles.countryText}>+503</Text></View>
-              <Field
-                accessibilityLabel="Número telefónico salvadoreño"
-                autoComplete="tel-national"
-                keyboardType="phone-pad"
-                label=""
-                maxLength={8}
-                onChangeText={(value) => setPhone(value.replace(/\D/g, '').slice(0, 8))}
-                placeholder="0000 0000"
-                value={phone}
-                containerStyle={styles.phoneField}
-                style={styles.phoneInput}
+            <Field
+              accessibilityLabel="Correo electrónico del cliente"
+              autoCapitalize="none"
+              autoComplete="email"
+              keyboardType="email-address"
+              label="Correo electrónico"
+              onChangeText={setEmail}
+              placeholder="nombre@correo.com"
+              value={email}
+            />
+            <View style={styles.passwordField}>
+              <Text style={styles.fieldLabel}>Contraseña</Text>
+              <TextInput
+                accessibilityLabel="Contraseña de cliente"
+                autoCapitalize="none"
+                autoComplete={isRegistering ? 'new-password' : 'current-password'}
+                onChangeText={setPassword}
+                placeholder={isRegistering ? 'Crea una contraseña (mínimo 8 caracteres)' : 'Ingresa tu contraseña'}
+                placeholderTextColor="#A39BA7"
+                secureTextEntry={!showPassword}
+                style={styles.passwordInput}
+                value={password}
               />
+              <Pressable
+                accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                accessibilityRole="button"
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.passwordVisibility}
+              >
+                <SymbolView
+                  name={{ ios: showPassword ? 'eye' : 'eye.slash', android: showPassword ? 'visibility' : 'visibility_off', web: showPassword ? 'visibility' : 'visibility_off' }}
+                  tintColor={palette.muted}
+                  size={19}
+                />
+              </Pressable>
             </View>
           </>
         )}
@@ -215,9 +289,37 @@ export default function AuthScreen() {
             </Pressable>
             <Text style={styles.privacy}>◉  Solo usamos tus datos para identificar tu cuenta.</Text>
           </>
-        ) : <PrimaryButton label="Continuar" onPress={() => { void continueToProfile(); }} />}
+        ) : (
+          <>
+            <PrimaryButton
+              disabled={submitting}
+              label={submitting ? 'Validando…' : isRegistering ? 'Crear cuenta' : 'Iniciar sesión'}
+              onPress={() => { void continueToProfile(); }}
+            />
+            {submitting ? <ActivityIndicator color={palette.purple} style={styles.spinner} /> : null}
+            <View style={styles.divider} />
+            <Text style={styles.switchPrompt}>{isRegistering ? '¿Ya tienes una cuenta?' : '¿Aún no tienes una cuenta?'}</Text>
+            <Pressable
+              disabled={submitting}
+              onPress={() => {
+                setError('');
+                setSuccess('');
+                setPassword('');
+                setShowPassword(false);
+                setIsRegistering(!isRegistering);
+              }}
+            >
+              <Text style={styles.switchLink}>{isRegistering ? 'Iniciar sesión' : 'Crear cuenta'}</Text>
+            </Pressable>
+            <Text style={styles.privacy}>◉  Tu cuenta y tus reservas se vinculan a tu sesión de Supabase.</Text>
+          </>
+        )}
       </View>
-      <Text style={styles.note}>{isSeller ? 'Tu cuenta se autentica de forma segura con Supabase.' : 'Para comercios salvadoreños'}</Text>
+      <Text style={styles.note}>
+        {isSeller
+          ? 'Tu cuenta se autentica de forma segura con Supabase.'
+          : 'Usa tu correo y contraseña. El inicio de sesión no solicita códigos ni enlaces mágicos.'}
+      </Text>
     </Screen>
   );
 }
@@ -233,11 +335,6 @@ const styles = StyleSheet.create({
   roleLabel: { color: '#63834F', fontSize: 10, fontWeight: '800', letterSpacing: 1.3, marginBottom: 3 },
   formTitle: { color: palette.purpleDark, fontSize: 22, fontWeight: '700' },
   fieldLabel: { color: palette.text, fontSize: 13, fontWeight: '700', marginBottom: 8 },
-  phoneRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 0 },
-  phoneField: { flex: 1, marginBottom: 0 },
-  phoneInput: { borderBottomLeftRadius: 0, borderTopLeftRadius: 0 },
-  countryCode: { alignItems: 'center', backgroundColor: '#F1F3ED', borderColor: palette.border, borderBottomLeftRadius: 12, borderTopLeftRadius: 12, borderWidth: 1, height: 52, justifyContent: 'center', marginTop: 0, width: 58 },
-  countryText: { color: palette.purple, fontSize: 14, fontWeight: '800' },
   termsRow: { alignItems: 'center', flexDirection: 'row', gap: 9, marginBottom: 12, marginTop: -3 },
   checkbox: { alignItems: 'center', borderColor: '#B9C1B5', borderRadius: 5, borderWidth: 1.5, height: 19, justifyContent: 'center', width: 19 },
   checkboxActive: { backgroundColor: palette.purple, borderColor: palette.purple },

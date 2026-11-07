@@ -18,6 +18,8 @@ const derivePassword = promisify(scrypt);
 const gmailUser = process.env.GMAIL_USER?.trim();
 const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, '');
 const supportEmail = process.env.SUPPORT_EMAIL?.trim() || 'soportenokory@gmail.com';
+const resendApiKey = process.env.RESEND_API_KEY?.trim();
+const resendFromEmail = process.env.RESEND_FROM_EMAIL?.trim() || 'Nokory Soporte <onboarding@resend.dev>';
 const supportTransporter = gmailUser && gmailAppPassword
   ? nodemailer.createTransport({
       service: 'gmail',
@@ -68,7 +70,9 @@ function sendError(response, status, message) {
 
 function isRateLimitedSupportRequest(request) {
   const now = Date.now();
-  const key = request.socket.remoteAddress || 'unknown';
+  const forwardedFor = request.headers['x-forwarded-for'];
+  const clientIp = typeof forwardedFor === 'string' ? forwardedFor.split(',')[0].trim() : '';
+  const key = clientIp || request.socket.remoteAddress || 'unknown';
   const recentRequests = (supportRateLimit.get(key) || [])
     .filter((timestamp) => now - timestamp < supportRateWindowMs);
   if (recentRequests.length >= supportRateLimitCount) {
@@ -212,21 +216,16 @@ const server = createServer(async (request, response) => {
       const role = payload.role === 'seller' || payload.role === 'client' ? payload.role : '';
       const name = typeof payload.name === 'string' ? payload.name.trim().replace(/[\r\n]/g, ' ') : '';
       const comment = typeof payload.comment === 'string' ? payload.comment.trim() : '';
-      const email = typeof payload.email === 'string' ? payload.email.trim() : '';
       const phone = typeof payload.phone === 'string' ? payload.phone.trim() : '';
       if (!type || !role || name.length < 1 || name.length > 120 || comment.length < 10 || comment.length > 5000) {
         sendError(response, 400, 'Revisa el tipo, nombre y comentario. El comentario debe tener entre 10 y 5000 caracteres.');
         return;
       }
-      if (role === 'seller' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        sendError(response, 400, 'Escribe un correo electrónico válido para el vendedor.');
+      if (!/^\d{8}$/.test(phone)) {
+        sendError(response, 400, 'El teléfono debe tener 8 dígitos de El Salvador.');
         return;
       }
-      if (role === 'client' && !/^\d{8}$/.test(phone)) {
-        sendError(response, 400, 'El teléfono del cliente debe tener 8 dígitos de El Salvador.');
-        return;
-      }
-      if (!supportTransporter || !gmailUser) {
+      if (!resendApiKey && (!supportTransporter || !gmailUser)) {
         sendError(response, 503, 'El servicio de correo no está configurado en el servidor.');
         return;
       }
@@ -238,25 +237,44 @@ const server = createServer(async (request, response) => {
         timeZone: 'America/El_Salvador',
       }).format(sentAt);
       const roleLabel = role === 'seller' ? 'Vendedor' : 'Cliente';
-      const contactLabel = role === 'seller' ? 'Correo electrónico' : 'Teléfono';
-      const contactValue = role === 'seller' ? email : `+503 ${phone}`;
       const subject = `[Nokory Soporte] ${type} - ${name}`;
       const text = [
         `Tipo: ${type}`,
         `Nombre: ${name}`,
         `Rol: ${roleLabel}`,
-        `${contactLabel}: ${contactValue}`,
+        `Teléfono: +503 ${phone}`,
         `Comentario: ${comment}`,
         `Fecha y hora: ${formattedDate} (hora de El Salvador)`,
       ].join('\n');
 
       try {
-        await supportTransporter.sendMail({
-          from: gmailUser,
-          to: supportEmail,
-          subject,
-          text,
-        });
+        if (resendApiKey) {
+          const emailResponse = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${resendApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              from: resendFromEmail,
+              to: [supportEmail],
+              subject,
+              text,
+            }),
+          });
+          if (!emailResponse.ok) {
+            console.error(`Resend rechazó el correo de soporte (HTTP ${emailResponse.status}).`);
+            sendError(response, 502, 'No se pudo enviar el reporte. Revisa la configuración del correo de soporte.');
+            return;
+          }
+        } else {
+          await supportTransporter.sendMail({
+            from: gmailUser,
+            to: supportEmail,
+            subject,
+            text,
+          });
+        }
       } catch (error) {
         console.error('No se pudo enviar el reporte de soporte:', error);
         sendError(response, 502, 'No se pudo enviar el reporte. Inténtalo de nuevo más tarde.');

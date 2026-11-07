@@ -10,14 +10,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { getAuthenticatedClientEmail } from '@/services/client-auth-api';
+import { formatPhoneForDisplay, normalizePhoneToE164 } from '@/services/phone';
 import { getProduct, type Product } from '@/services/products-api';
-import { getClientProfile, reserveProduct, type ReservationConfirmation } from '@/services/reservations-api';
+import { reserveProduct, type ReservationConfirmation } from '@/services/reservations-api';
 import { Screen, palette } from '../shared/screen-ui';
-
-function isValidPhone(value: string) {
-  const digits = value.replace(/\D/g, '');
-  return digits.length >= 8 && digits.length <= 15;
-}
 
 export default function ProductDetailScreen() {
   const router = useRouter();
@@ -25,7 +22,9 @@ export default function ProductDetailScreen() {
   const [product, setProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState(phone ?? '');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [loadingClient, setLoadingClient] = useState(true);
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -33,12 +32,14 @@ export default function ProductDetailScreen() {
   const [confirmation, setConfirmation] = useState<ReservationConfirmation | null>(null);
 
   useEffect(() => {
-    void getClientProfile().then((saved) => {
-      if (saved) {
-        setCustomerName((current) => current || saved.name);
-        setCustomerPhone((current) => current || saved.phone);
-      }
-    });
+    void getAuthenticatedClientEmail()
+      .then(setCustomerEmail)
+      .catch((cause) => {
+        setBookingError(cause instanceof Error
+          ? cause.message
+          : 'Inicia sesión con tu correo para realizar una reserva.');
+      })
+      .finally(() => setLoadingClient(false));
   }, []);
 
   useFocusEffect(
@@ -78,19 +79,23 @@ export default function ProductDetailScreen() {
       setBookingError('Escribe tu nombre para continuar con la reserva.');
       return;
     }
-    if (!customerPhone.trim()) {
-      setBookingError('Escribe tu número de teléfono para coordinar la recogida.');
+    if (!customerEmail) {
+      setBookingError('Inicia sesión con tu correo para realizar una reserva.');
       return;
     }
-    if (!isValidPhone(customerPhone)) {
-      setBookingError('Revisa el teléfono. Ingresa entre 8 y 15 dígitos.');
+
+    let normalizedContactPhone: string;
+    try {
+      normalizedContactPhone = normalizePhoneToE164(customerPhone);
+    } catch {
+      setBookingError('Escribe un teléfono de contacto válido con prefijo de país.');
       return;
     }
 
     setBooking(true);
     setBookingError('');
     try {
-      const result = await reserveProduct(product.id, customerName, customerPhone, quantity);
+      const result = await reserveProduct(product.id, customerName, quantity, normalizedContactPhone);
       setConfirmation(result);
       setProduct((current) => current ? { ...current, quantity: result.remainingQuantity } : current);
     } catch (cause) {
@@ -250,24 +255,29 @@ export default function ProductDetailScreen() {
                 style={styles.input}
                 value={customerName}
               />
-              <Text style={styles.fieldLabel}>Número de teléfono</Text>
+              <Text style={styles.fieldLabel}>Correo de tu cuenta</Text>
+              <View accessibilityLabel="Correo de la cuenta autenticada" style={styles.input}>
+                <Text style={styles.phoneValue}>{loadingClient ? 'Verificando…' : customerEmail || 'Inicia sesión para reservar'}</Text>
+              </View>
+              <Text style={styles.fieldLabel}>Teléfono de contacto</Text>
               <TextInput
-                accessibilityLabel="Número de teléfono"
+                accessibilityLabel="Teléfono de contacto con prefijo de país"
                 autoComplete="tel"
                 keyboardType="phone-pad"
+                maxLength={24}
                 onChangeText={setCustomerPhone}
-                placeholder="Ej. 7000 0000"
+                placeholder="+503 7601-4956"
                 placeholderTextColor="#A39BA7"
                 style={styles.input}
-                value={customerPhone}
+                value={customerPhone ? formatPhoneForDisplay(customerPhone) : ''}
               />
               {bookingError ? <Text accessibilityRole="alert" style={styles.errorText}>{bookingError}</Text> : null}
               <Pressable
                 accessibilityRole="button"
-                accessibilityState={{ disabled: booking }}
-                disabled={booking}
+                accessibilityState={{ disabled: booking || loadingClient || !customerEmail }}
+                disabled={booking || loadingClient || !customerEmail}
                 onPress={() => { void confirmReservation(); }}
-                style={[styles.reserveButton, booking && styles.disabledButton]}
+                style={[styles.reserveButton, (booking || loadingClient || !customerEmail) && styles.disabledButton]}
               >
                 {booking ? <ActivityIndicator color={palette.white} /> : null}
                 <Text style={styles.reserveButtonText}>{booking ? 'Confirmando…' : 'Confirmar reserva'}</Text>
@@ -314,6 +324,7 @@ const styles = StyleSheet.create({
   quantityValue: { color: palette.purpleDark, fontSize: 17, fontWeight: '800', minWidth: 22, textAlign: 'center' },
   subtotal: { color: palette.purpleDark, fontSize: 14, fontWeight: '800', marginTop: 8 },
   input: { backgroundColor: '#FFFEFD', borderColor: palette.border, borderRadius: 11, borderWidth: 1, color: palette.text, fontSize: 14, minHeight: 46, paddingHorizontal: 12 },
+  phoneValue: { color: palette.text, fontSize: 14, lineHeight: 46 },
   errorText: { color: '#A13D45', fontSize: 12, lineHeight: 18, marginTop: 11 },
   reserveButton: { alignItems: 'center', backgroundColor: palette.purple, borderRadius: 12, flexDirection: 'row', gap: 9, justifyContent: 'center', marginTop: 15, minHeight: 48 },
   reserveButtonText: { color: palette.white, fontSize: 14, fontWeight: '800' },

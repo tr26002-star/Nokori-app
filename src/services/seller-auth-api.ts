@@ -61,7 +61,7 @@ export async function loginSeller(email: string, password: string): Promise<Sell
   return toSellerAccount(data.user, email);
 }
 
-export async function logoutSeller(): Promise<void> {
+export async function logoutAccount(): Promise<void> {
   if (!hasSupabaseConfig()) {
     return;
   }

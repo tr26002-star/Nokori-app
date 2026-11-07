@@ -65,11 +65,14 @@ export default function ReservationsScreen() {
 
   const loadReservations = useCallback(async (isPullToRefresh = false) => {
     if (isPullToRefresh) setRefreshing(true);
-    else setLoading(true);
+    else {
+      setLoading(true);
+      setReservations([]);
+    }
     setErrorMessage('');
 
     try {
-      const data = await getClientReservations({ phone });
+      const data = await getClientReservations();
       setReservations(data);
     } catch (cause) {
       console.error('Error al cargar reservas del cliente:', cause);
@@ -78,7 +81,7 @@ export default function ReservationsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [phone]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -92,7 +95,7 @@ export default function ReservationsScreen() {
   );
 
   const historyReservations = useMemo(
-    () => reservations.filter((r) => r.status === 'delivered' || r.status === 'cancelled'),
+    () => reservations.filter((r) => r.status !== 'pending'),
     [reservations]
   );
 
@@ -125,10 +128,13 @@ export default function ReservationsScreen() {
     try {
       await cancelReservation(reservationToCancel.id, reservationToCancel.ticketCode);
       const cancelledItem = reservationToCancel;
+      setReservations((current) =>
+        current.map((item) =>
+          item.id === cancelledItem.id ? { ...item, status: 'cancelled' } : item
+        )
+      );
+      setSelectedTab('history');
       setReservationToCancel(null);
-
-      // Recargar la lista fresca desde Supabase/caché
-      await loadReservations();
 
       Alert.alert(
         'Reserva cancelada',
@@ -234,6 +240,7 @@ export default function ReservationsScreen() {
             const isPending = item.status === 'pending';
             const isDelivered = item.status === 'delivered';
             const isCancelled = item.status === 'cancelled';
+            const isNotCollected = item.status === 'not_collected';
             const cleanCode = item.ticketCode.startsWith('#') ? item.ticketCode : `#${item.ticketCode}`;
 
             return (
@@ -261,6 +268,8 @@ export default function ReservationsScreen() {
                           ? styles.pendingPill
                           : isCancelled
                           ? styles.cancelledPill
+                          : isNotCollected
+                          ? styles.notCollectedPill
                           : styles.deliveredPill
                       }
                     >
@@ -270,10 +279,12 @@ export default function ReservationsScreen() {
                             ? styles.pendingPillText
                             : isCancelled
                             ? styles.cancelledPillText
+                            : isNotCollected
+                            ? styles.notCollectedPillText
                             : styles.deliveredPillText
                         }
                       >
-                        {isPending ? 'Reservada' : isCancelled ? 'Cancelada' : 'Entregada'}
+                        {isPending ? 'Reservada' : isCancelled ? 'Cancelada' : isNotCollected ? 'No recogida' : 'Recogida'}
                       </Text>
                     </View>
                     <Text style={styles.timeTag}>{formatRelativeTime(item.createdAt)}</Text>
@@ -336,7 +347,16 @@ export default function ReservationsScreen() {
                           tintColor="#2E7D32"
                           size={15}
                         />
-                        <Text style={styles.completedBadgeText}>Completada</Text>
+                        <Text style={styles.completedBadgeText}>Recogida</Text>
+                      </View>
+                    ) : isNotCollected ? (
+                      <View style={styles.notCollectedBadge}>
+                        <SymbolView
+                          name={{ ios: 'clock.badge.xmark', android: 'event_busy', web: 'event_busy' }}
+                          tintColor="#A65B00"
+                          size={15}
+                        />
+                        <Text style={styles.notCollectedBadgeText}>No recogida</Text>
                       </View>
                     ) : (
                       <View style={styles.cancelledBadge}>
@@ -372,7 +392,7 @@ export default function ReservationsScreen() {
             onPress={() => setReservationToCancel(null)}
             style={styles.modalBackdrop}
           />
-          <View accessibilityRole="alertdialog" style={styles.modalCard}>
+          <View accessibilityRole="alert" style={styles.modalCard}>
             <View style={styles.modalIconWrap}>
               <SymbolView
                 name={{ ios: 'exclamationmark.triangle.fill', android: 'warning', web: 'warning' }}
@@ -486,6 +506,8 @@ const styles = StyleSheet.create({
   deliveredPillText: { color: '#2E7D32', fontSize: 11, fontWeight: '800' },
   cancelledPill: { backgroundColor: '#FFF0F1', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 4 },
   cancelledPillText: { color: '#C2414C', fontSize: 11, fontWeight: '800' },
+  notCollectedPill: { backgroundColor: '#FFF4E5', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 4 },
+  notCollectedPillText: { color: '#A65B00', fontSize: 11, fontWeight: '800' },
   timeTag: { color: palette.muted, fontSize: 11 },
 
   productName: { color: palette.purpleDark, fontSize: 18, fontWeight: '800', lineHeight: 24 },
@@ -549,6 +571,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   cancelledBadgeText: { color: '#C2414C', fontSize: 11, fontWeight: '800' },
+  notCollectedBadge: {
+    alignItems: 'center',
+    backgroundColor: '#FFF4E5',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 5,
+    minHeight: 32,
+    paddingHorizontal: 10,
+  },
+  notCollectedBadgeText: { color: '#A65B00', fontSize: 11, fontWeight: '800' },
 
   /* Estilos del diálogo de confirmación */
   modalOverlay: {

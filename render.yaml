@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: nokory-support-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SUPPORT_EMAIL
+        value: soportenokory@gmail.com

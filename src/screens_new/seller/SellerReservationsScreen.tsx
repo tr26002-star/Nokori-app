@@ -1,8 +1,10 @@
 import {
   getSellerReservations,
   markReservationAsDelivered,
+  markReservationAsNotCollected,
   type Reservation,
 } from '@/services/reservations-api';
+import { formatPhoneForDisplay } from '@/services/phone';
 import { useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useMemo, useState } from 'react';
@@ -17,7 +19,7 @@ import {
 } from 'react-native';
 import { Eyebrow, Screen, palette } from '../shared/screen-ui';
 
-type FilterTab = 'all' | 'pending' | 'delivered';
+type FilterTab = 'all' | 'pending' | 'history';
 
 export default function SellerReservationsScreen() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -43,13 +45,21 @@ export default function SellerReservationsScreen() {
   useFocusEffect(
     useCallback(() => {
       void loadReservations();
+      const refreshInterval = setInterval(() => {
+        void loadReservations();
+      }, 20000);
+      return () => clearInterval(refreshInterval);
     }, [loadReservations])
   );
 
   // Filtrado reactivo por pestaña y por código/nombre
   const filteredReservations = useMemo(() => {
     return reservations.filter((item) => {
-      const matchesTab = filterTab === 'all' ? true : item.status === filterTab;
+      const matchesTab = filterTab === 'all'
+        ? true
+        : filterTab === 'pending'
+          ? item.status === 'pending'
+          : item.status !== 'pending';
       const matchesSearch = searchCode.trim()
         ? item.ticketCode.toLowerCase().includes(searchCode.trim().toLowerCase()) ||
           item.customerName.toLowerCase().includes(searchCode.trim().toLowerCase())
@@ -60,19 +70,19 @@ export default function SellerReservationsScreen() {
 
   async function handleMarkAsDelivered(reservation: Reservation) {
     Alert.alert(
-      'Validar entrega de pedido',
-      `¿Confirmas la entrega del ticket #${reservation.ticketCode} a ${reservation.customerName} y el cobro en el negocio de $${reservation.totalPrice.toFixed(2)}?`,
+      'Confirmar recogida del pack',
+      `¿Confirmas que ${reservation.customerName} recogió ${reservation.packs} ${reservation.packs === 1 ? 'pack' : 'packs'} con el código #${reservation.ticketCode}? Total a cobrar: $${reservation.totalPrice.toFixed(2)}.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Confirmar entrega',
+          text: 'Confirmar recogida',
           onPress: async () => {
             try {
               const updated = await markReservationAsDelivered(reservation.id);
               setReservations(updated);
               Alert.alert(
-                '¡Pedido entregado!',
-                `El ticket #${reservation.ticketCode} fue marcado como entregado exitosamente.`
+                '¡Pack recogido!',
+                `La reserva #${reservation.ticketCode} fue marcada como recogida.`
               );
             } catch (cause) {
               Alert.alert(
@@ -86,7 +96,37 @@ export default function SellerReservationsScreen() {
     );
   }
 
+  function handleMarkAsNotCollected(reservation: Reservation) {
+    Alert.alert(
+      'Cliente no recogió el pack',
+      `¿Confirmas que el cliente no llegó por ${reservation.packs} ${reservation.packs === 1 ? 'pack' : 'packs'} de ${reservation.productName}? Las unidades volverán al inventario y la reserva pasará al Historial del cliente como “No recogida”.`,
+      [
+        { text: 'Volver', style: 'cancel' },
+        {
+          text: 'Devolver al inventario',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const updated = await markReservationAsNotCollected(reservation.id);
+              setReservations(updated);
+              Alert.alert(
+                'Inventario actualizado',
+                `${reservation.packs} ${reservation.packs === 1 ? 'pack fue devuelto' : 'packs fueron devueltos'} al inventario. La reserva #${reservation.ticketCode} quedó como no recogida.`
+              );
+            } catch (cause) {
+              Alert.alert(
+                'No se pudo actualizar',
+                cause instanceof Error ? cause.message : 'No se pudo devolver el pack al inventario.',
+              );
+            }
+          },
+        },
+      ]
+    );
+  }
+
   const pendingCount = reservations.filter((r) => r.status === 'pending').length;
+  const historyCount = reservations.length - pendingCount;
 
   return (
     <Screen contentStyle={styles.screenContent} showBottomNav showBrand={false} showDecorations={false}>
@@ -142,11 +182,11 @@ export default function SellerReservationsScreen() {
             </Pressable>
 
             <Pressable
-              onPress={() => setFilterTab('delivered')}
-              style={[styles.tabButton, filterTab === 'delivered' && styles.tabButtonActive]}
+              onPress={() => setFilterTab('history')}
+              style={[styles.tabButton, filterTab === 'history' && styles.tabButtonActive]}
             >
-              <Text style={[styles.tabText, filterTab === 'delivered' && styles.tabTextActive]}>
-                Entregadas
+              <Text style={[styles.tabText, filterTab === 'history' && styles.tabTextActive]}>
+                Finalizadas ({historyCount})
               </Text>
             </Pressable>
           </View>
@@ -191,7 +231,7 @@ export default function SellerReservationsScreen() {
                 <View style={styles.customerInfo}>
                   <Text style={styles.customerName}>{item.customerName}</Text>
                   {item.customerPhone ? (
-                    <Text style={styles.customerPhone}>Tel: {item.customerPhone}</Text>
+                    <Text style={styles.customerPhone}>Tel: {formatPhoneForDisplay(item.customerPhone)}</Text>
                   ) : null}
                 </View>
 
@@ -207,6 +247,9 @@ export default function SellerReservationsScreen() {
                 </View>
                 <Text style={styles.productName} numberOfLines={2}>
                   {item.productName}
+                </Text>
+                <Text style={styles.packsDescription}>
+                  {item.packs} {item.packs === 1 ? 'pack reservado' : 'packs reservados'}
                 </Text>
               </View>
 
@@ -224,26 +267,58 @@ export default function SellerReservationsScreen() {
               </View>
 
               {item.status === 'pending' ? (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => { void handleMarkAsDelivered(item); }}
-                  style={styles.deliverButton}
-                >
-                  <SymbolView
-                    name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }}
-                    tintColor={palette.white}
-                    size={18}
-                  />
-                  <Text style={styles.deliverButtonText}>Marcar como entregado</Text>
-                </Pressable>
-              ) : (
+                <View style={styles.reservationActions}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => { void handleMarkAsDelivered(item); }}
+                    style={styles.deliverButton}
+                  >
+                    <SymbolView
+                      name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }}
+                      tintColor={palette.white}
+                      size={18}
+                    />
+                    <Text style={styles.deliverButtonText}>Marcar como recogida</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => handleMarkAsNotCollected(item)}
+                    style={styles.noShowButton}
+                  >
+                    <SymbolView
+                      name={{ ios: 'arrow.uturn.backward.circle.fill', android: 'undo', web: 'undo' }}
+                      tintColor="#9B5200"
+                      size={17}
+                    />
+                    <Text style={styles.noShowButtonText}>No recogida · devolver al inventario</Text>
+                  </Pressable>
+                </View>
+              ) : item.status === 'delivered' ? (
                 <View style={styles.deliveredBadge}>
                   <SymbolView
                     name={{ ios: 'checkmark', android: 'done', web: 'done' }}
                     tintColor="#2E7D32"
                     size={16}
                   />
-                  <Text style={styles.deliveredBadgeText}>Entregado al cliente</Text>
+                  <Text style={styles.deliveredBadgeText}>Recogida por el cliente</Text>
+                </View>
+              ) : item.status === 'not_collected' ? (
+                <View style={styles.noShowBadge}>
+                  <SymbolView
+                    name={{ ios: 'arrow.uturn.backward.circle.fill', android: 'undo', web: 'undo' }}
+                    tintColor="#9B5200"
+                    size={16}
+                  />
+                  <Text style={styles.noShowBadgeText}>No recogida · inventario devuelto</Text>
+                </View>
+              ) : (
+                <View style={styles.cancelledBadge}>
+                  <SymbolView
+                    name={{ ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }}
+                    tintColor="#C2414C"
+                    size={16}
+                  />
+                  <Text style={styles.cancelledBadgeText}>Cancelada por el cliente</Text>
                 </View>
               )}
             </View>
@@ -363,6 +438,7 @@ const styles = StyleSheet.create({
   },
   packsText: { color: '#4E7743', fontSize: 12, fontWeight: '800' },
   productName: { color: palette.text, flex: 1, fontSize: 14, fontWeight: '600' },
+  packsDescription: { color: palette.muted, fontSize: 11, marginTop: 3, marginLeft: 38 },
   divider: { backgroundColor: '#F0EAF2', height: 1, marginBottom: 12 },
   cardFooter: {
     alignItems: 'center',
@@ -384,6 +460,20 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   deliverButtonText: { color: palette.white, fontSize: 13, fontWeight: '800' },
+  reservationActions: { gap: 8 },
+  noShowButton: {
+    alignItems: 'center',
+    backgroundColor: '#FFF4E5',
+    borderColor: '#F0D8B8',
+    borderRadius: 11,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 7,
+    justifyContent: 'center',
+    minHeight: 42,
+    paddingHorizontal: 8,
+  },
+  noShowButtonText: { color: '#9B5200', fontSize: 12, fontWeight: '800' },
   deliveredBadge: {
     alignItems: 'center',
     backgroundColor: '#E8F5E9',
@@ -394,6 +484,26 @@ const styles = StyleSheet.create({
     minHeight: 38,
   },
   deliveredBadgeText: { color: '#2E7D32', fontSize: 12, fontWeight: '800' },
+  noShowBadge: {
+    alignItems: 'center',
+    backgroundColor: '#FFF4E5',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    minHeight: 38,
+  },
+  noShowBadgeText: { color: '#9B5200', fontSize: 12, fontWeight: '800' },
+  cancelledBadge: {
+    alignItems: 'center',
+    backgroundColor: '#FFF0F1',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    minHeight: 38,
+  },
+  cancelledBadgeText: { color: '#C2414C', fontSize: 12, fontWeight: '800' },
   emptyCard: {
     alignItems: 'center',
     backgroundColor: palette.white,

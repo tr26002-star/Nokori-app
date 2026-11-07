@@ -1,6 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSupabaseClient, hasSupabaseConfig } from './supabase';
 import type { ClientReservationRow, ReservationBookingRow, ReservationRow } from './supabase.types';
+
+export type ReservationStatus = 'pending' | 'delivered' | 'cancelled' | 'not_collected';
 
 export type Reservation = {
   id: string;
@@ -14,7 +15,7 @@ export type Reservation = {
   pickupStart: string;
   pickupEnd: string;
   pickupTime: string;
-  status: 'pending' | 'delivered' | 'cancelled';
+  status: ReservationStatus;
   createdAt: string;
 };
 
@@ -34,7 +35,7 @@ export type ClientReservation = {
   pickupStart: string;
   pickupEnd: string;
   pickupTime: string;
-  status: 'pending' | 'delivered' | 'cancelled';
+  status: ReservationStatus;
   createdAt: string;
 };
 
@@ -42,81 +43,7 @@ export type ReservationConfirmation = Reservation & {
   remainingQuantity: number;
 };
 
-const CLIENT_TICKETS_KEY = '@nokori_client_ticket_codes';
-const CLIENT_PROFILE_KEY = '@nokori_client_profile';
-const CLIENT_CACHE_KEY = '@nokori_client_reservations_cache';
-
-export async function getClientTicketCodes(): Promise<string[]> {
-  try {
-    const raw = await AsyncStorage.getItem(CLIENT_TICKETS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    console.error('Error leyendo ticket codes locales:', error);
-    return [];
-  }
-}
-
-export async function saveClientTicketCode(ticketCode: string): Promise<void> {
-  try {
-    const clean = ticketCode.trim();
-    if (!clean) return;
-    const current = await getClientTicketCodes();
-    const normalized = clean.replace(/^#/, '');
-    const alreadySaved = current.some((c) => c === clean || c.replace(/^#/, '') === normalized);
-    if (!alreadySaved) {
-      const next = [clean, ...current];
-      await AsyncStorage.setItem(CLIENT_TICKETS_KEY, JSON.stringify(next));
-    }
-  } catch (error) {
-    console.error('Error guardando ticket code:', error);
-  }
-}
-
-export async function saveClientProfile(name: string, phone: string): Promise<void> {
-  try {
-    const payload = { name: name.trim(), phone: phone.trim() };
-    await AsyncStorage.setItem(CLIENT_PROFILE_KEY, JSON.stringify(payload));
-  } catch (error) {
-    console.error('Error guardando perfil del cliente:', error);
-  }
-}
-
-export async function getClientProfile(): Promise<{ name: string; phone: string } | null> {
-  try {
-    const raw = await AsyncStorage.getItem(CLIENT_PROFILE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed.name === 'string' && typeof parsed.phone === 'string') {
-      return parsed;
-    }
-    return null;
-  } catch (error) {
-    console.error('Error leyendo perfil de cliente:', error);
-    return null;
-  }
-}
-
-async function getCachedClientReservations(): Promise<ClientReservation[]> {
-  try {
-    const raw = await AsyncStorage.getItem(CLIENT_CACHE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    console.error('Error leyendo caché de reservas:', error);
-    return [];
-  }
-}
-
-async function setCachedClientReservations(items: ClientReservation[]): Promise<void> {
-  try {
-    await AsyncStorage.setItem(CLIENT_CACHE_KEY, JSON.stringify(items));
-  } catch (error) {
-    console.error('Error guardando caché de reservas:', error);
-  }
-}
+type ReservationDataRow = Omit<ReservationRow, 'customer_id'>;
 
 function requireSupabase() {
   if (!hasSupabaseConfig()) {
@@ -125,7 +52,7 @@ function requireSupabase() {
   return getSupabaseClient();
 }
 
-function toReservation(row: ReservationRow): Reservation {
+function toReservation(row: ReservationDataRow): Reservation {
   const totalPrice = Number(row.total_price);
   if (!Number.isFinite(totalPrice)) {
     throw new Error('La base de datos devolvió un total de reserva no válido.');
@@ -173,122 +100,87 @@ function toClientReservation(row: ClientReservationRow): ClientReservation {
 export async function reserveProduct(
   productId: string,
   customerName: string,
-  customerPhone: string,
   packs: number,
+  customerPhone: string,
 ): Promise<ReservationConfirmation> {
-  const supabase = requireSupabase();
-  const trimmedName = customerName.trim();
-  const trimmedPhone = customerPhone.trim();
-
-  const { data, error } = await supabase.rpc('reserve_product', {
+  const { data, error } = await requireSupabase().rpc('reserve_product', {
     p_product_id: productId,
-    p_customer_name: trimmedName,
-    p_customer_phone: trimmedPhone,
+    p_customer_name: customerName.trim(),
     p_packs: packs,
+    p_customer_phone: customerPhone,
   });
   if (error) throw new Error(error.message);
   const booking: ReservationBookingRow | undefined = data?.[0];
   if (!booking) throw new Error('No recibimos la confirmación de la reserva. Actualiza la oferta e inténtalo otra vez.');
 
-  // Guardar de forma inmediata el ticket y datos de contacto en el almacenamiento local
-  await saveClientTicketCode(booking.ticket_code);
-  await saveClientProfile(trimmedName, trimmedPhone);
-
   const { remaining_quantity: remainingQuantity, ...row } = booking;
   return { ...toReservation(row), remainingQuantity };
 }
 
-export async function getClientReservations(options?: { phone?: string }): Promise<ClientReservation[]> {
-  const savedTickets = await getClientTicketCodes();
-  const savedProfile = await getClientProfile();
-  const rawPhone = options?.phone || savedProfile?.phone || '';
-  const cleanPhone = rawPhone.replace(/\D/g, '');
+export async function getClientReservations(): Promise<ClientReservation[]> {
+  const supabase = requireSupabase();
+  const { data: initialSession, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  const userId = initialSession.session?.user.id;
+  if (!userId) throw new Error('Inicia sesión con tu cuenta de cliente para ver tus reservas.');
 
-  if (!hasSupabaseConfig()) {
-    return getCachedClientReservations();
+  const { data, error } = await supabase.rpc('get_client_reservations');
+  if (error) throw new Error(error.message);
+
+  const { data: currentSession, error: currentSessionError } = await supabase.auth.getSession();
+  if (currentSessionError) throw currentSessionError;
+  if (currentSession.session?.user.id !== userId) {
+    throw new Error('La sesión cambió. Vuelve a cargar tus reservas.');
   }
 
-  // Si no hay tickets guardados ni un teléfono de al menos 8 dígitos, retornamos la caché
-  if (savedTickets.length === 0 && cleanPhone.length < 8) {
-    return getCachedClientReservations();
-  }
-
-  try {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase.rpc('get_client_reservations', {
-      p_ticket_codes: savedTickets,
-      p_customer_phone: cleanPhone,
-    });
-
-    if (error) {
-      console.warn('Error en RPC get_client_reservations, usando caché:', error.message);
-      return getCachedClientReservations();
-    }
-
-    const items = (data || []).map(toClientReservation);
-
-    // Si encontramos reservas en Supabase asociadas al teléfono, guardamos sus tickets localmente también
-    for (const item of items) {
-      if (item.ticketCode) {
-        await saveClientTicketCode(item.ticketCode);
-      }
-    }
-
-    // Actualizar la caché local con los datos más recientes de Supabase
-    await setCachedClientReservations(items);
-    return items;
-  } catch (err) {
-    console.error('Error al consultar reservas del cliente:', err);
-    return getCachedClientReservations();
-  }
+  return (data || []).map(toClientReservation);
 }
 
 export async function getSellerReservations(): Promise<Reservation[]> {
   const supabase = requireSupabase();
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  if (userError) throw userError;
-  if (!userData.user) throw new Error('Inicia sesión con tu cuenta de vendedor para ver tus reservas.');
+  const { data: initialSession, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  const userId = initialSession.session?.user.id;
+  if (!userId) throw new Error('Inicia sesión con tu cuenta de vendedor para ver tus reservas.');
 
-  const { data, error } = await supabase
-    .from('reservations')
-    .select('*')
-    .eq('seller_id', userData.user.id)
-    .order('created_at', { ascending: false });
+  const { data, error } = await supabase.rpc('get_seller_reservations');
   if (error) throw error;
-  return data.map(toReservation);
+  const { data: currentSession, error: currentSessionError } = await supabase.auth.getSession();
+  if (currentSessionError) throw currentSessionError;
+  if (currentSession.session?.user.id !== userId) {
+    throw new Error('La sesión cambió. Vuelve a cargar las reservas del negocio.');
+  }
+  return (data || []).map(toReservation);
 }
 
 export async function markReservationAsDelivered(id: string): Promise<Reservation[]> {
-  const supabase = requireSupabase();
-  const { data, error } = await supabase
-    .from('reservations')
-    .update({ status: 'delivered' })
-    .eq('id', id)
-    .eq('status', 'pending')
-    .select('id')
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) throw new Error('La reserva ya fue actualizada o no pertenece a este negocio.');
+  const { data, error } = await requireSupabase().rpc('mark_reservation_delivered', {
+    p_reservation_id: id,
+  });
+  if (error) throw new Error(error.message);
+  if (data !== true) throw new Error('El servidor no confirmó la recogida del pack.');
+  return getSellerReservations();
+}
+
+export async function markReservationAsNotCollected(id: string): Promise<Reservation[]> {
+  const { data, error } = await requireSupabase().rpc('mark_reservation_not_collected', {
+    p_reservation_id: id,
+  });
+  if (error) throw new Error(error.message);
+  if (data !== true) {
+    throw new Error('El servidor no confirmó la devolución de los packs al inventario.');
+  }
   return getSellerReservations();
 }
 
 export async function cancelReservation(reservationId: string, ticketCode: string): Promise<void> {
   const cleanCode = ticketCode.trim().replace(/^#/, '');
-
-  if (hasSupabaseConfig()) {
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.rpc('cancel_reservation', {
-      p_reservation_id: reservationId,
-      p_ticket_code: cleanCode,
-    });
-    if (error) {
-      throw new Error(error.message);
-    }
+  const { data, error } = await requireSupabase().rpc('cancel_reservation', {
+    p_reservation_id: reservationId,
+    p_ticket_code: cleanCode,
+  });
+  if (error) throw new Error(error.message);
+  if (data !== true) {
+    throw new Error('El servidor no confirmó la cancelación de la reserva.');
   }
-
-  const cached = await getCachedClientReservations();
-  const nextCache = cached.map((r) =>
-    r.id === reservationId ? { ...r, status: 'cancelled' as const } : r
-  );
-  await setCachedClientReservations(nextCache);
 }

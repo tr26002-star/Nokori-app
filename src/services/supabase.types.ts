@@ -18,6 +18,7 @@ export type ReservationRow = {
   id: string;
   ticket_code: string;
   seller_id: string;
+  customer_id: string | null;
   product_id: string;
   product_name: string;
   customer_name: string;
@@ -26,11 +27,11 @@ export type ReservationRow = {
   total_price: number;
   pickup_start: string;
   pickup_end: string;
-  status: 'pending' | 'delivered' | 'cancelled';
+  status: 'pending' | 'delivered' | 'cancelled' | 'not_collected';
   created_at: string;
 };
 
-export type ReservationBookingRow = ReservationRow & {
+export type ReservationBookingRow = Omit<ReservationRow, 'customer_id'> & {
   remaining_quantity: number;
 };
 
@@ -49,7 +50,7 @@ export type ClientReservationRow = {
   total_price: number;
   pickup_start: string;
   pickup_end: string;
-  status: 'pending' | 'delivered' | 'cancelled';
+  status: 'pending' | 'delivered' | 'cancelled' | 'not_collected';
   created_at: string;
 };
 
@@ -67,7 +68,7 @@ export type Database = {
       };
       reservations: {
         Row: ReservationRow;
-        Insert: Omit<ReservationRow, 'id' | 'created_at' | 'ticket_code'> & {
+        Insert: Omit<ReservationRow, 'id' | 'created_at' | 'ticket_code' | 'customer_id'> & {
           id?: string;
           created_at?: string;
           ticket_code?: string;
@@ -81,16 +82,13 @@ export type Database = {
         Args: {
           p_product_id: string;
           p_customer_name: string;
-          p_customer_phone: string;
           p_packs: number;
+          p_customer_phone: string;
         };
         Returns: ReservationBookingRow[];
       };
       get_client_reservations: {
-        Args: {
-          p_ticket_codes?: string[];
-          p_customer_phone?: string;
-        };
+        Args: Record<string, never>;
         Returns: ClientReservationRow[];
       };
       cancel_reservation: {
@@ -99,6 +97,18 @@ export type Database = {
           p_ticket_code: string;
         };
         Returns: boolean;
+      };
+      mark_reservation_not_collected: {
+        Args: { p_reservation_id: string };
+        Returns: boolean;
+      };
+      mark_reservation_delivered: {
+        Args: { p_reservation_id: string };
+        Returns: boolean;
+      };
+      get_seller_reservations: {
+        Args: Record<string, never>;
+        Returns: ReservationRow[];
       };
     };
     Views: Record<string, never>;

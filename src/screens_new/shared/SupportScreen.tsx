@@ -10,27 +10,25 @@ import {
   View,
 } from 'react-native';
 import { sendSupportComment } from '@/services/support-api';
+import { formatSalvadoranNationalPhone } from '@/services/phone';
 import { Eyebrow, PageHeading, Panel, Screen, palette } from './screen-ui';
 
 const COMMENT_MAX_LENGTH = 5000;
 const SUBMISSION_COOLDOWN_SECONDS = 30;
 const COMMENT_TYPES = ['Falla', 'Mejora'] as const;
 type CommentType = typeof COMMENT_TYPES[number];
-type SupportField = 'type' | 'name' | 'email' | 'phone' | 'comment';
+type SupportField = 'type' | 'name' | 'phone' | 'comment';
 type SupportErrors = Partial<Record<SupportField, string>>;
 
 export default function SupportScreen() {
   const router = useRouter();
-  const { role: roleParam, email: emailParam, phone: phoneParam } = useLocalSearchParams<{
+  const { role: roleParam, phone: phoneParam } = useLocalSearchParams<{
     role?: string;
-    email?: string;
     phone?: string;
   }>();
   const role = roleParam === 'seller' ? 'seller' : 'client';
-  const isSeller = role === 'seller';
   const [type, setType] = useState<CommentType>('Falla');
   const [name, setName] = useState('');
-  const [email, setEmail] = useState(typeof emailParam === 'string' ? emailParam : '');
   const [phone, setPhone] = useState(typeof phoneParam === 'string' ? phoneParam.replace(/\D/g, '').slice(-8) : '');
   const [comment, setComment] = useState('');
   const [typeOpen, setTypeOpen] = useState(false);
@@ -51,11 +49,7 @@ export default function SupportScreen() {
     const nextErrors: SupportErrors = {};
     if (!COMMENT_TYPES.includes(type)) nextErrors.type = 'Selecciona Falla o Mejora.';
     if (!name.trim()) nextErrors.name = 'Escribe tu nombre.';
-    if (isSeller) {
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-        nextErrors.email = 'Escribe un correo electrónico válido.';
-      }
-    } else if (!/^\d{8}$/.test(phone.trim())) {
+    if (!/^\d{8}$/.test(phone.trim())) {
       nextErrors.phone = 'Ingresa un número de El Salvador de 8 dígitos.';
     }
     if (comment.trim().length < 10) {
@@ -77,12 +71,11 @@ export default function SupportScreen() {
         type,
         name: name.trim(),
         role,
-        ...(isSeller ? { email: email.trim() } : { phone: phone.trim() }),
+        phone: phone.trim(),
         comment: comment.trim(),
       });
       setType('Falla');
       setName('');
-      setEmail('');
       setPhone('');
       setComment('');
       setErrors({});
@@ -166,47 +159,25 @@ export default function SupportScreen() {
         />
         {errors.name ? <Text accessibilityRole="alert" style={styles.fieldError}>{errors.name}</Text> : null}
 
-        {isSeller ? (
-          <>
-            <Text style={styles.fieldLabel}>Correo electrónico</Text>
-            <TextInput
-              autoCapitalize="none"
-              autoComplete="email"
-              keyboardType="email-address"
-              onChangeText={(value) => {
-                setEmail(value);
-                clearFieldError('email');
-              }}
-              placeholder="nombre@correo.com"
-              placeholderTextColor="#A39BA7"
-              style={styles.input}
-              value={email}
-            />
-            {errors.email ? <Text accessibilityRole="alert" style={styles.fieldError}>{errors.email}</Text> : null}
-          </>
-        ) : (
-          <>
-            <Text style={styles.fieldLabel}>Número de teléfono</Text>
-            <View style={styles.phoneRow}>
-              <View style={styles.countryCode}><Text style={styles.countryCodeText}>+503</Text></View>
-              <TextInput
-                accessibilityLabel="Número telefónico salvadoreño de 8 dígitos"
-                autoComplete="tel-national"
-                keyboardType="phone-pad"
-                maxLength={8}
-                onChangeText={(value) => {
-                  setPhone(value.replace(/\D/g, '').slice(0, 8));
-                  clearFieldError('phone');
-                }}
-                placeholder="00000000"
-                placeholderTextColor="#A39BA7"
-                style={[styles.input, styles.phoneInput]}
-                value={phone}
-              />
-            </View>
-            {errors.phone ? <Text accessibilityRole="alert" style={styles.fieldError}>{errors.phone}</Text> : null}
-          </>
-        )}
+        <Text style={styles.fieldLabel}>Número de teléfono</Text>
+        <View style={styles.phoneRow}>
+          <View style={styles.countryCode}><Text style={styles.countryCodeText}>+503</Text></View>
+          <TextInput
+            accessibilityLabel="Número telefónico salvadoreño de 8 dígitos"
+            autoComplete="tel-national"
+            keyboardType="phone-pad"
+            maxLength={9}
+            onChangeText={(value) => {
+              setPhone(value.replace(/\D/g, '').slice(0, 8));
+              clearFieldError('phone');
+            }}
+            placeholder="0000-0000"
+            placeholderTextColor="#A39BA7"
+            style={[styles.input, styles.phoneInput]}
+            value={formatSalvadoranNationalPhone(phone)}
+          />
+        </View>
+        {errors.phone ? <Text accessibilityRole="alert" style={styles.fieldError}>{errors.phone}</Text> : null}
 
         <Text style={styles.fieldLabel}>Comentario</Text>
         <TextInput
