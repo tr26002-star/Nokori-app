@@ -1,0 +1,15 @@
+{
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://nokory-support-api.onrender.com",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://hjoazlkigzduquzacqit.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_6whXMNb5NhRkNjQ_Qk51iQ_gJMHS2ea"
+      }
+    }
+  }
+}
