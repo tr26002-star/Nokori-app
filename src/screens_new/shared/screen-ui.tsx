@@ -112,9 +112,10 @@ export function PageHeading({ title, description }: { title: string; description
   );
 }
 
-export function PrimaryButton({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) {
+export function PrimaryButton({ label, onPress, disabled = false, accessibilityLabel }: { label: string; onPress: () => void; disabled?: boolean; accessibilityLabel?: string }) {
   return (
     <Pressable
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       disabled={disabled}
@@ -126,9 +127,16 @@ export function PrimaryButton({ label, onPress, disabled = false }: { label: str
   );
 }
 
-export function SecondaryButton({ label, onPress }: { label: string; onPress: () => void }) {
+export function SecondaryButton({ label, onPress, accessibilityLabel, disabled = false }: { label: string; onPress: () => void; accessibilityLabel?: string; disabled?: boolean }) {
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={styles.secondaryButton}>
+    <Pressable
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.secondaryButton, disabled && styles.disabled]}
+    >
       <Text style={styles.secondaryButtonText}>{label}</Text>
     </Pressable>
   );
@@ -149,6 +157,32 @@ export function Field({ label, style: inputStyle, containerStyle, ...props }: Te
       />
     </View>
   );
+}
+
+export function Checkbox({ label, checked, onPress, accessibilityLabel }: {
+  label: string;
+  checked: boolean;
+  onPress: () => void;
+  accessibilityLabel: string;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      onPress={onPress}
+      style={styles.checkboxRow}
+    >
+      <View style={[styles.checkbox, checked && styles.checkboxActive]}>
+        {checked ? <Text style={styles.checkmark}>✓</Text> : null}
+      </View>
+      <Text style={styles.checkboxText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+export function FormError({ message }: { message: string }) {
+  return message ? <Text accessibilityRole="alert" style={styles.error}>{message}</Text> : null;
 }
 
 const styles = StyleSheet.create({
@@ -174,6 +208,12 @@ const styles = StyleSheet.create({
   fieldGroup: { marginBottom: 16 },
   fieldLabel: { color: palette.text, fontSize: 14, fontWeight: '700', marginBottom: 8 },
   input: { backgroundColor: palette.white, borderColor: palette.border, borderRadius: 11, borderWidth: 1, color: palette.text, fontSize: 15, minHeight: 48, paddingHorizontal: 13 },
+  checkboxRow: { alignItems: 'center', flexDirection: 'row', gap: 9, marginBottom: 12, marginTop: -3 },
+  checkbox: { alignItems: 'center', borderColor: '#B9C1B5', borderRadius: 5, borderWidth: 1.5, height: 19, justifyContent: 'center', width: 19 },
+  checkboxActive: { backgroundColor: palette.purple, borderColor: palette.purple },
+  checkmark: { color: palette.white, fontSize: 13, fontWeight: '800' },
+  checkboxText: { color: palette.text, fontSize: 12 },
+  error: { color: '#B23B45', fontSize: 12, marginTop: -4 },
   bottomNav: { alignSelf: 'center', backgroundColor: palette.white, borderColor: palette.border, borderRadius: 16, borderWidth: 1, elevation: 3, flexDirection: 'row', justifyContent: 'space-around', marginBottom: 6, maxWidth: 520, minHeight: 62, paddingHorizontal: 7, paddingVertical: 6, shadowColor: '#493354', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 8, width: '94%' },
   navItem: { alignItems: 'center', borderRadius: 11, flex: 1, gap: 3, justifyContent: 'center' },
   navItemActive: { backgroundColor: palette.palePurple },

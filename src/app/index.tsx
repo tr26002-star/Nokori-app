@@ -1,5 +1,5 @@
 import { Redirect } from 'expo-router';
 
 export default function IndexRoute() {
-  return <Redirect href="/role-select" />;
+  return <Redirect href="/auth" />;
 }

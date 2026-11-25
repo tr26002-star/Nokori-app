@@ -1,4 +1,5 @@
 import { getSupabaseClient, hasSupabaseConfig } from './supabase';
+import { getCurrentApprovedBusiness } from './account-api';
 import type { ClientReservationRow, ReservationBookingRow, ReservationRow } from './supabase.types';
 
 export type ReservationStatus = 'pending' | 'delivered' | 'cancelled' | 'not_collected';
@@ -12,6 +13,10 @@ export type Reservation = {
   productName: string;
   packs: number;
   totalPrice: number;
+  commissionAmount: number;
+  totalPaid: number;
+  paymentStatus: 'pagada_simulada' | 'historica' | 'pagada' | 'pendiente' | 'fallida' | 'reembolsada';
+  paymentProvider: 'wompi_simulado' | 'historico' | 'wompi';
   pickupStart: string;
   pickupEnd: string;
   pickupTime: string;
@@ -24,6 +29,9 @@ export type ClientReservation = {
   ticketCode: string;
   sellerId: string;
   sellerName: string;
+  sellerAddress: string | null;
+  sellerLatitude: number | null;
+  sellerLongitude: number | null;
   productId: string;
   productName: string;
   category: string;
@@ -53,8 +61,9 @@ function requireSupabase() {
 }
 
 function toReservation(row: ReservationDataRow): Reservation {
-  const totalPrice = Number(row.total_price);
-  if (!Number.isFinite(totalPrice)) {
+  const totalPaid = Number(row.total_paid);
+  const commissionAmount = Number(row.commission_amount);
+  if (!Number.isFinite(totalPaid) || !Number.isFinite(commissionAmount)) {
     throw new Error('La base de datos devolvió un total de reserva no válido.');
   }
   return {
@@ -65,7 +74,11 @@ function toReservation(row: ReservationDataRow): Reservation {
     productId: row.product_id,
     productName: row.product_name,
     packs: row.packs,
-    totalPrice,
+    totalPrice: totalPaid,
+    commissionAmount,
+    totalPaid,
+    paymentStatus: row.payment_status,
+    paymentProvider: row.payment_provider,
     pickupStart: row.pickup_start,
     pickupEnd: row.pickup_end,
     pickupTime: `${row.pickup_start} – ${row.pickup_end}`,
@@ -81,6 +94,9 @@ function toClientReservation(row: ClientReservationRow): ClientReservation {
     ticketCode: row.ticket_code,
     sellerId: row.seller_id,
     sellerName: row.seller_name || 'Comercio local',
+    sellerAddress: row.seller_address,
+    sellerLatitude: row.seller_latitude,
+    sellerLongitude: row.seller_longitude,
     productId: row.product_id,
     productName: row.product_name,
     category: row.product_category || 'Comida',
@@ -138,6 +154,9 @@ export async function getClientReservations(): Promise<ClientReservation[]> {
 
 export async function getSellerReservations(): Promise<Reservation[]> {
   const supabase = requireSupabase();
+  if (!await getCurrentApprovedBusiness()) {
+    throw new Error('Solo un negocio aprobado puede consultar sus reservas.');
+  }
   const { data: initialSession, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) throw sessionError;
   const userId = initialSession.session?.user.id;
@@ -154,6 +173,9 @@ export async function getSellerReservations(): Promise<Reservation[]> {
 }
 
 export async function markReservationAsDelivered(id: string): Promise<Reservation[]> {
+  if (!await getCurrentApprovedBusiness()) {
+    throw new Error('Solo un negocio aprobado puede confirmar la recogida de una reserva.');
+  }
   const { data, error } = await requireSupabase().rpc('mark_reservation_delivered', {
     p_reservation_id: id,
   });
@@ -163,6 +185,9 @@ export async function markReservationAsDelivered(id: string): Promise<Reservatio
 }
 
 export async function markReservationAsNotCollected(id: string): Promise<Reservation[]> {
+  if (!await getCurrentApprovedBusiness()) {
+    throw new Error('Solo un negocio aprobado puede actualizar sus reservas.');
+  }
   const { data, error } = await requireSupabase().rpc('mark_reservation_not_collected', {
     p_reservation_id: id,
   });

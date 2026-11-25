@@ -6,9 +6,9 @@ export default function RootLayout() {
       <Stack.Screen name="index" />
       <Stack.Screen name="norms" />
       <Stack.Screen name="support" />
-      <Stack.Screen name="role-select" />
       <Stack.Screen name="auth" />
       <Stack.Screen name="profile" />
+      <Stack.Screen name="affiliate" />
       <Stack.Screen name="explore" />
       <Stack.Screen name="product" />
       <Stack.Screen name="publish" />

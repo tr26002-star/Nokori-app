@@ -1,4 +1,5 @@
 import { getSupabaseClient, hasSupabaseConfig } from './supabase';
+import { savePendingProfilePhoto, validateProfilePhoto, type ProfilePhoto } from './account-api';
 
 function requireSupabase() {
   if (!hasSupabaseConfig()) {
@@ -19,10 +20,6 @@ function validateCredentials(email: string, password: string, isRegistration: bo
     throw new Error('La contraseña debe tener al menos 8 caracteres.');
   }
   return normalizedEmail;
-}
-
-function isSellerAccount(user: { user_metadata?: Record<string, unknown> }): boolean {
-  return typeof user.user_metadata?.business_name === 'string';
 }
 
 function getAuthErrorDetails(cause: unknown): { code: string; message: string } {
@@ -65,20 +62,44 @@ export type ClientRegistrationResult = {
   emailConfirmationRequired: boolean;
 };
 
-export async function registerClient(email: string, password: string): Promise<ClientRegistrationResult> {
+export async function registerClient(
+  email: string,
+  password: string,
+  fullName: string,
+  profilePhoto: ProfilePhoto | null,
+  acceptedCommunityRules: boolean,
+): Promise<ClientRegistrationResult> {
   const normalizedEmail = validateCredentials(email, password, true);
-  const { data, error } = await requireSupabase().auth.signUp({
+  if (fullName.trim().length < 2) throw new Error('Escribe tu nombre completo.');
+  if (!profilePhoto) throw new Error('Selecciona una foto de perfil.');
+  validateProfilePhoto(profilePhoto);
+  if (!acceptedCommunityRules) throw new Error('Acepta las normas de la comunidad para crear tu cuenta.');
+
+  const supabase = requireSupabase();
+  const { data, error } = await supabase.auth.signUp({
     email: normalizedEmail,
     password,
+    options: {
+      data: {
+        full_name: fullName.trim(),
+        community_rules_accepted_at: new Date().toISOString(),
+      },
+    },
   });
   if (error) throw error;
   if (!data.user) throw new Error('Supabase no devolvió los datos de la cuenta creada.');
   if (data.user.identities?.length === 0) {
     throw new Error('email_exists: Ese correo ya está registrado.');
   }
+  await savePendingProfilePhoto(normalizedEmail, profilePhoto);
+  if (data.session) {
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) throw signOutError;
+    throw new Error('La confirmación de correo no está activa en Supabase. Actívala antes de permitir nuevos registros.');
+  }
   return {
     email: data.user.email ?? normalizedEmail,
-    emailConfirmationRequired: !data.session,
+    emailConfirmationRequired: true,
   };
 }
 
@@ -92,9 +113,6 @@ export async function loginClient(email: string, password: string): Promise<stri
   if (!data.user?.email) {
     throw new Error('Supabase no devolvió el correo de la cuenta autenticada.');
   }
-  if (isSellerAccount(data.user)) {
-    throw new Error('Esta cuenta corresponde al perfil de vendedor. Inicia sesión desde ese rol.');
-  }
   return data.user.email;
 }
 
@@ -104,9 +122,6 @@ export async function getAuthenticatedClientEmail(): Promise<string> {
   if (!data.user?.email) {
     throw new Error('Inicia sesión con tu correo para acceder a las reservas.');
   }
-  if (isSellerAccount(data.user)) {
-    throw new Error('Esta cuenta corresponde al perfil de vendedor. Inicia sesión como cliente.');
-  }
   return data.user.email;
 }
 
@@ -115,5 +130,5 @@ export async function getPersistedClientEmail(): Promise<string | null> {
   const { data, error } = await getSupabaseClient().auth.getSession();
   if (error) throw error;
   const user = data.session?.user;
-  return user && !isSellerAccount(user) ? user.email ?? null : null;
+  return user?.email ?? null;
 }

@@ -1,4 +1,5 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -16,6 +17,7 @@ import {
   getClientReservations,
   type ClientReservation,
 } from '@/services/reservations-api';
+import { getGoogleMapsUrl } from '@/services/maps';
 import { Eyebrow, Screen, palette } from '../shared/screen-ui';
 
 type ReservationTab = 'active' | 'history';
@@ -155,6 +157,20 @@ export default function ReservationsScreen() {
     }
   }
 
+  async function openDirections(latitude: number | null, longitude: number | null, sellerName: string) {
+    const url = getGoogleMapsUrl(latitude, longitude);
+    if (!url) return;
+    try {
+      await Linking.openURL(url);
+    } catch (cause) {
+      console.error(`No se pudo abrir la ubicación de ${sellerName}:`, cause);
+      Alert.alert(
+        'No se pudo abrir Google Maps',
+        `No se pudo abrir la ubicación de ${sellerName}. Inténtalo de nuevo.`,
+      );
+    }
+  }
+
   return (
     <Screen
       activeNavRoute="/reservations"
@@ -242,6 +258,7 @@ export default function ReservationsScreen() {
             const isCancelled = item.status === 'cancelled';
             const isNotCollected = item.status === 'not_collected';
             const cleanCode = item.ticketCode.startsWith('#') ? item.ticketCode : `#${item.ticketCode}`;
+            const directionsUrl = getGoogleMapsUrl(item.sellerLatitude, item.sellerLongitude);
 
             return (
               <View key={item.id} style={styles.card}>
@@ -369,6 +386,18 @@ export default function ReservationsScreen() {
                       </View>
                     )}
                   </View>
+                  {directionsUrl ? (
+                    <Pressable
+                      accessibilityLabel={`Cómo llegar a ${item.sellerName}`}
+                      accessibilityRole="button"
+                      onPress={() => {
+                        void openDirections(item.sellerLatitude, item.sellerLongitude, item.sellerName);
+                      }}
+                      style={styles.exploreButton}
+                    >
+                      <Text style={styles.exploreButtonText}>Cómo llegar</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               </View>
             );

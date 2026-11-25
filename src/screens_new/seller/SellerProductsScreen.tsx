@@ -126,6 +126,7 @@ export default function SellerProductsScreen() {
         name: product.name,
         description: product.description,
         category: product.category,
+        normalPrice: product.normalPrice === null ? '' : String(product.normalPrice),
         price: String(product.price),
         quantity: String(product.quantity),
         pickupStart: product.pickupStart,

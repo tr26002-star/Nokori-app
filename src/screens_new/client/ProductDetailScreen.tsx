@@ -1,4 +1,5 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -11,14 +12,17 @@ import {
   View,
 } from 'react-native';
 import { getAuthenticatedClientEmail } from '@/services/client-auth-api';
+import { getGoogleMapsUrl } from '@/services/maps';
+import { simulateWompiPayment } from '@/services/payments-api';
 import { formatPhoneForDisplay, normalizePhoneToE164 } from '@/services/phone';
-import { getProduct, type Product } from '@/services/products-api';
-import { reserveProduct, type ReservationConfirmation } from '@/services/reservations-api';
+import { getProduct, getReservationQuote, type Product, type ReservationQuote } from '@/services/products-api';
+import type { ReservationConfirmation } from '@/services/reservations-api';
 import { Screen, palette } from '../shared/screen-ui';
 
 export default function ProductDetailScreen() {
   const router = useRouter();
-  const { id, phone } = useLocalSearchParams<{ id?: string; phone?: string }>();
+  const { id, phone, distanceKm, role } = useLocalSearchParams<{ id?: string; phone?: string; distanceKm?: string; role?: string }>();
+  const isBusinessMode = role === 'seller';
   const [product, setProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [customerName, setCustomerName] = useState('');
@@ -29,7 +33,18 @@ export default function ProductDetailScreen() {
   const [booking, setBooking] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [bookingError, setBookingError] = useState('');
+  const [mapError, setMapError] = useState('');
   const [confirmation, setConfirmation] = useState<ReservationConfirmation | null>(null);
+  const [reservationQuote, setReservationQuote] = useState<{
+    productId: string;
+    packs: number;
+    quote: ReservationQuote;
+  } | null>(null);
+  const [quoteError, setQuoteError] = useState<{ productId: string; packs: number; message: string } | null>(null);
+  const parsedDistance = typeof distanceKm === 'string' ? Number(distanceKm) : Number.NaN;
+  const distanceLabel = Number.isFinite(parsedDistance) && parsedDistance >= 0
+    ? `${parsedDistance.toFixed(1)} km`
+    : null;
 
   useEffect(() => {
     void getAuthenticatedClientEmail()
@@ -73,8 +88,45 @@ export default function ProductDetailScreen() {
     }, [id]),
   );
 
+  useEffect(() => {
+    if (!product || isBusinessMode || product.quantity < 1) return;
+
+    let active = true;
+    const timer = setTimeout(() => {
+      void getReservationQuote(product.id, quantity)
+        .then((quote) => {
+          if (active) setReservationQuote({ productId: product.id, packs: quantity, quote });
+        })
+        .catch((cause) => {
+          if (active) {
+            console.error('No se pudo consultar el total de la reserva:', cause);
+            setQuoteError({
+              productId: product.id,
+              packs: quantity,
+              message: cause instanceof Error ? cause.message : 'No se pudo consultar el total.',
+            });
+          }
+        });
+    }, 150);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [product, quantity, isBusinessMode]);
+
+  const currentQuote = product
+    && reservationQuote?.productId === product.id
+    && reservationQuote.packs === quantity
+    ? reservationQuote.quote
+    : null;
+  const currentQuoteError = product
+    && quoteError?.productId === product.id
+    && quoteError.packs === quantity
+    ? quoteError.message
+    : '';
+
   async function confirmReservation() {
-    if (!product || product.quantity < 1 || booking) return;
+    if (!product || product.quantity < 1 || booking || !currentQuote) return;
     if (customerName.trim().length < 2) {
       setBookingError('Escribe tu nombre para continuar con la reserva.');
       return;
@@ -95,7 +147,7 @@ export default function ProductDetailScreen() {
     setBooking(true);
     setBookingError('');
     try {
-      const result = await reserveProduct(product.id, customerName, quantity, normalizedContactPhone);
+      const result = await simulateWompiPayment(product.id, customerName, quantity, normalizedContactPhone);
       setConfirmation(result);
       setProduct((current) => current ? { ...current, quantity: result.remainingQuantity } : current);
     } catch (cause) {
@@ -111,6 +163,22 @@ export default function ProductDetailScreen() {
       }
     } finally {
       setBooking(false);
+    }
+  }
+
+  async function openBusinessDirections() {
+    if (!product) return;
+    const url = getGoogleMapsUrl(product.businessLatitude, product.businessLongitude);
+    if (!url) {
+      setMapError('La ubicación de este comercio no está disponible.');
+      return;
+    }
+    setMapError('');
+    try {
+      await Linking.openURL(url);
+    } catch (cause) {
+      console.error('No se pudo abrir la ubicación del comercio:', cause);
+      setMapError('No se pudo abrir Google Maps. Inténtalo de nuevo.');
     }
   }
 
@@ -155,7 +223,7 @@ export default function ProductDetailScreen() {
               <View style={styles.detailRow}>
                 <View style={styles.detailBlock}>
                   <Text style={styles.detailLabel}>Precio por unidad</Text>
-                  <Text style={styles.price}>${product.price.toFixed(2)}</Text>
+                  <Text style={styles.price}>${(currentQuote?.unitPrice ?? product.price).toFixed(2)}</Text>
                 </View>
                 <View style={styles.detailBlock}>
                   <Text style={styles.detailLabel}>Recogida</Text>
@@ -175,6 +243,38 @@ export default function ProductDetailScreen() {
                   </Text>
                 </View>
               )}
+            </View>
+          </View>
+
+          <View style={styles.productCard}>
+            {product.businessAvatarUrl ? (
+              <Image
+                accessibilityLabel={`Foto de ${product.sellerName}`}
+                source={{ uri: product.businessAvatarUrl }}
+                style={styles.productImage}
+              />
+            ) : (
+              <View style={styles.imagePlaceholder}>
+                <SymbolView name={{ ios: 'storefront.fill', android: 'storefront', web: 'storefront' }} tintColor="#84AF7A" size={42} />
+                <Text style={styles.placeholderLabel}>Foto del comercio no disponible</Text>
+              </View>
+            )}
+            <View style={styles.productContent}>
+              <Text style={styles.category}>COMERCIO</Text>
+              <Text style={styles.productName}>{product.sellerName}</Text>
+              <Text style={styles.description}>{product.businessAddress || 'Dirección no disponible.'}</Text>
+              {distanceLabel ? <Text style={styles.pickup}>{distanceLabel}</Text> : null}
+              {getGoogleMapsUrl(product.businessLatitude, product.businessLongitude) ? (
+                <Pressable
+                  accessibilityLabel={`Ver ${product.sellerName} en Google Maps`}
+                  accessibilityRole="button"
+                  onPress={() => { void openBusinessDirections(); }}
+                  style={styles.viewReservationsButton}
+                >
+                  <Text style={styles.viewReservationsButtonText}>Ver en Google Maps</Text>
+                </Pressable>
+              ) : null}
+              {mapError ? <Text accessibilityRole="alert" style={styles.errorText}>{mapError}</Text> : null}
             </View>
           </View>
 
@@ -198,20 +298,47 @@ export default function ProductDetailScreen() {
                 <Text style={styles.summaryValue}>{confirmation.packs}</Text>
               </View>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Total a pagar en tienda</Text>
-                <Text style={styles.summaryValue}>${confirmation.totalPrice.toFixed(2)}</Text>
+                <Text style={styles.summaryLabel}>Total</Text>
+                <Text style={styles.summaryValue}>${confirmation.totalPaid.toFixed(2)}</Text>
               </View>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Horario de recogida</Text>
                 <Text style={styles.summaryValue}>{confirmation.pickupStart} – {confirmation.pickupEnd}</Text>
               </View>
               <Text style={styles.successCustomer}>Reserva a nombre de {confirmation.customerName}</Text>
+              {getGoogleMapsUrl(product.businessLatitude, product.businessLongitude) ? (
+                <Pressable
+                  accessibilityLabel={`Cómo llegar a ${product.sellerName}`}
+                  accessibilityRole="button"
+                  onPress={() => { void openBusinessDirections(); }}
+                  style={styles.viewReservationsButton}
+                >
+                  <Text style={styles.viewReservationsButtonText}>Cómo llegar</Text>
+                </Pressable>
+              ) : null}
+              {mapError ? <Text accessibilityRole="alert" style={styles.errorText}>{mapError}</Text> : null}
               <Pressable
                 accessibilityRole="button"
                 onPress={() => router.push({ pathname: '/reservations', params: { role: 'client', phone: customerPhone } })}
                 style={styles.viewReservationsButton}
               >
                 <Text style={styles.viewReservationsButtonText}>Ver en Mis reservas</Text>
+              </Pressable>
+            </View>
+          ) : isBusinessMode ? (
+            <View style={styles.bookingCard}>
+              <Text style={styles.sectionTitle}>Modo negocio</Text>
+              <Text style={styles.sectionDescription}>Las reservas se realizan en modo cliente.</Text>
+              <Pressable
+                accessibilityLabel="Cambiar a modo cliente para reservar"
+                accessibilityRole="button"
+                onPress={() => router.replace({
+                  pathname: '/explore',
+                  params: { role: 'client', ...(phone ? { phone } : {}) },
+                })}
+                style={styles.viewReservationsButton}
+              >
+                <Text style={styles.viewReservationsButtonText}>Cambiar a modo cliente</Text>
               </Pressable>
             </View>
           ) : product.quantity > 0 ? (
@@ -242,7 +369,12 @@ export default function ProductDetailScreen() {
                   <Text style={styles.quantityButtonText}>+</Text>
                 </Pressable>
               </View>
-              <Text style={styles.subtotal}>Total: ${(product.price * quantity).toFixed(2)}</Text>
+              <Text style={styles.subtotal}>
+                Total: {currentQuote ? `$${currentQuote.totalPaid.toFixed(2)}` : 'Calculando…'}
+              </Text>
+              {currentQuoteError && !currentQuote ? (
+                <Text accessibilityRole="alert" style={styles.errorText}>{currentQuoteError}</Text>
+              ) : null}
 
               <Text style={styles.fieldLabel}>Tu nombre</Text>
               <TextInput
@@ -272,15 +404,21 @@ export default function ProductDetailScreen() {
                 value={customerPhone ? formatPhoneForDisplay(customerPhone) : ''}
               />
               {bookingError ? <Text accessibilityRole="alert" style={styles.errorText}>{bookingError}</Text> : null}
+              <Text style={styles.pickupNote}>
+                Modo de prueba: no se realizará un cargo real ni se solicitarán datos de tarjeta.
+              </Text>
               <Pressable
+                accessibilityLabel="Pagar con Wompi (simulación)"
                 accessibilityRole="button"
-                accessibilityState={{ disabled: booking || loadingClient || !customerEmail }}
-                disabled={booking || loadingClient || !customerEmail}
+                accessibilityState={{ disabled: booking || loadingClient || !customerEmail || !currentQuote }}
+                disabled={booking || loadingClient || !customerEmail || !currentQuote}
                 onPress={() => { void confirmReservation(); }}
-                style={[styles.reserveButton, (booking || loadingClient || !customerEmail) && styles.disabledButton]}
+                style={[styles.reserveButton, (booking || loadingClient || !customerEmail || !currentQuote) && styles.disabledButton]}
               >
                 {booking ? <ActivityIndicator color={palette.white} /> : null}
-                <Text style={styles.reserveButtonText}>{booking ? 'Confirmando…' : 'Confirmar reserva'}</Text>
+                <Text style={styles.reserveButtonText}>
+                  {booking ? 'Procesando pago simulado…' : 'Pagar con Wompi (simulación)'}
+                </Text>
               </Pressable>
               <Text style={styles.pickupNote}>Recogida en el comercio · {product.pickupStart} – {product.pickupEnd}</Text>
             </View>

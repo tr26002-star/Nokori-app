@@ -1,8 +1,14 @@
-import { createProduct, updateSellerProduct } from '@/services/products-api';
+import {
+  createProduct,
+  getClientPriceQuote,
+  MIN_RESCUE_PRICE,
+  updateSellerProduct,
+  type ClientPriceQuote,
+} from '@/services/products-api';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -49,6 +55,7 @@ export default function ProductFormScreen() {
     name?: string;
     description?: string;
     category?: string;
+    normalPrice?: string;
     price?: string;
     quantity?: string;
     pickupStart?: string;
@@ -68,7 +75,7 @@ export default function ProductFormScreen() {
   const [description, setDescription] = useState(params.description || '');
   const [category, setCategory] = useState(params.category || productCategories[0]);
   const [categoryOpen, setCategoryOpen] = useState(false);
-  const [normalPrice, setNormalPrice] = useState('');
+  const [normalPrice, setNormalPrice] = useState(params.normalPrice || '');
   const [rescuePrice, setRescuePrice] = useState(params.price || '');
   const [quantity, setQuantity] = useState(params.quantity || '1');
   const [expiryDate, setExpiryDate] = useState('Hoy');
@@ -80,15 +87,63 @@ export default function ProductFormScreen() {
   const [photo, setPhoto] = useState<SelectedPhoto | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [clientPriceQuote, setClientPriceQuote] = useState<{
+    rescuePrice: number;
+    normalPrice: number | null;
+    quote: ClientPriceQuote;
+  } | null>(null);
+  const [clientPriceQuoteError, setClientPriceQuoteError] = useState<{
+    rescuePrice: number;
+    normalPrice: number | null;
+    message: string;
+  } | null>(null);
 
-  // Cálculo automático del porcentaje de descuento
-  const numNormal = parseFloat(normalPrice.replace(',', '.')) || 0;
+  const normalPriceForQuote = Number(normalPrice.replace(',', '.'));
+  const quoteNormalPrice = Number.isFinite(normalPriceForQuote) && normalPriceForQuote > 0
+    ? normalPriceForQuote
+    : null;
   const numRescue = parseFloat(rescuePrice.replace(',', '.')) || 0;
-  const discountPercent =
-    numNormal > numRescue && numNormal > 0
-      ? Math.round(((numNormal - numRescue) / numNormal) * 100)
-      : 0;
-  const savedAmount = numNormal > numRescue ? (numNormal - numRescue).toFixed(2) : '0.00';
+  const currentPriceQuote = clientPriceQuote?.rescuePrice === numRescue
+    && clientPriceQuote.normalPrice === quoteNormalPrice
+    ? clientPriceQuote.quote
+    : null;
+  const discountPercent = currentPriceQuote?.discountPercent || 0;
+  const savedAmount = currentPriceQuote?.savedAmount.toFixed(2) || '0.00';
+
+  useEffect(() => {
+    const rescuePriceValue = Number(rescuePrice.replace(',', '.'));
+    if (!rescuePrice.trim() || !Number.isFinite(rescuePriceValue) || rescuePriceValue <= 0) {
+      return;
+    }
+
+    let active = true;
+    const timer = setTimeout(() => {
+      void getClientPriceQuote(rescuePriceValue, quoteNormalPrice)
+        .then((quote) => {
+          if (active) {
+            setClientPriceQuote({
+              rescuePrice: rescuePriceValue,
+              normalPrice: quoteNormalPrice,
+              quote,
+            });
+          }
+        })
+        .catch((cause) => {
+          if (active) {
+            console.error('No se pudo consultar el precio final para clientes:', cause);
+            setClientPriceQuoteError({
+              rescuePrice: rescuePriceValue,
+              normalPrice: quoteNormalPrice,
+              message: 'No se pudo consultar el precio final.',
+            });
+          }
+        });
+    }, 300);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [rescuePrice, quoteNormalPrice]);
 
   async function choosePhoto() {
     try {
@@ -115,6 +170,7 @@ export default function ProductFormScreen() {
 
   async function handleSubmit() {
     const numericPrice = Number(rescuePrice.replace(',', '.'));
+    const numericNormalPrice = Number(normalPrice.replace(',', '.'));
     const numericQuantity = Number(quantity);
     const pickupTimes = pickupSchedule.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
 
@@ -123,6 +179,12 @@ export default function ProductFormScreen() {
     }
     if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
       return setError('Ingresa un precio de rescate válido mayor a cero.');
+    }
+    if (numericPrice < MIN_RESCUE_PRICE) {
+      return setError('El precio de rescate debe ser de $3.50 o más');
+    }
+    if (!Number.isFinite(numericNormalPrice) || numericNormalPrice <= numericPrice) {
+      return setError('El precio normal debe ser mayor que el precio de rescate.');
     }
     if (!Number.isInteger(numericQuantity) || numericQuantity < 1) {
       return setError('La cantidad debe ser al menos 1 pack.');
@@ -141,6 +203,7 @@ export default function ProductFormScreen() {
           name: name.trim(),
           description: description.trim(),
           category,
+          normalPrice: numericNormalPrice,
           price: numericPrice,
           quantity: numericQuantity,
           pickupStart: pickupTimes[1],
@@ -152,6 +215,7 @@ export default function ProductFormScreen() {
           name: name.trim(),
           description: description.trim(),
           category,
+          normalPrice: numericNormalPrice,
           price: numericPrice,
           quantity: numericQuantity,
           pickupStart: pickupTimes[1],
@@ -283,6 +347,16 @@ export default function ProductFormScreen() {
           </Text>
         </View>
       ) : null}
+      <Text style={styles.noticeText}>
+        {numRescue <= 0
+          ? 'Precio final para clientes: —'
+          : currentPriceQuote
+            ? `Precio final para clientes: $${currentPriceQuote.clientPrice.toFixed(2)}`
+            : clientPriceQuoteError?.rescuePrice === numRescue
+              && clientPriceQuoteError.normalPrice === quoteNormalPrice
+              ? clientPriceQuoteError.message
+              : 'Precio final para clientes: consultando…'}
+      </Text>
 
       {/* Packs y Horario */}
       <View style={styles.row}>

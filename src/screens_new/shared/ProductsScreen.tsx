@@ -1,7 +1,10 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import * as Location from 'expo-location';
+import * as Linking from 'expo-linking';
 import { SymbolView } from 'expo-symbols';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AppState,
   ActivityIndicator,
   Image,
   Pressable,
@@ -11,15 +14,24 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { getProducts, type Product } from '@/services/products-api';
+import { getCurrentBusinessRequest } from '@/services/account-api';
+import { getNearbyProducts, type Product } from '@/services/products-api';
 import { productCategories } from './product-categories';
-import { Eyebrow, PrimaryButton, Screen, palette } from './screen-ui';
+import { Eyebrow, FormError, PageHeading, Panel, PrimaryButton, Screen, SecondaryButton, palette } from './screen-ui';
+
+type RadiusKm = 2 | 3 | 5;
+
+const radiusOptions: RadiusKm[] = [2, 3, 5];
+
+function formatDistance(distanceKm: number | null): string {
+  return distanceKm === null ? '' : `${distanceKm.toFixed(1)} km`;
+}
 
 function ProductCard({ product, onPress }: { product: Product; onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${product.name}, ${product.quantity > 0 ? `${product.quantity} unidades disponibles` : 'agotado'}, $${product.price.toFixed(2)}`}
+      accessibilityLabel={`${product.name}, ${product.quantity > 0 ? `${product.quantity} unidades disponibles` : 'agotado'}, ${formatDistance(product.distanceKm)}, $${product.price.toFixed(2)}`}
       onPress={onPress}
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
     >
@@ -47,9 +59,26 @@ function ProductCard({ product, onPress }: { product: Product; onPress: () => vo
           </View>
           <Text style={styles.price}>${product.price.toFixed(2)}</Text>
         </View>
-        <Text style={styles.pickup}>Recogida: {product.pickupStart} – {product.pickupEnd}</Text>
+        <Text style={styles.pickup}>
+          {product.distanceKm === null ? '' : `${formatDistance(product.distanceKm)} · `}
+          Recogida: {product.pickupStart} – {product.pickupEnd}
+        </Text>
       </View>
     </Pressable>
+  );
+}
+
+function BusinessApprovalBanner() {
+  return (
+    <View accessibilityRole="alert" style={styles.availabilityCard}>
+      <View style={styles.leafIcon}>
+        <SymbolView name={{ ios: 'leaf.fill', android: 'eco', web: 'eco' }} tintColor="#63834F" size={21} />
+      </View>
+      <View style={styles.availabilityCopy}>
+        <Text style={styles.availabilityTitle}>Tu negocio fue aprobado</Text>
+        <Text style={styles.availabilityDescription}>Desde tu perfil puedes cambiar a modo negocio.</Text>
+      </View>
+    </View>
   );
 }
 
@@ -62,6 +91,16 @@ export default function ProductsScreen() {
   const [error, setError] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Todas');
+  const [radiusKm, setRadiusKm] = useState<RadiusKm>(3);
+  const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const [locationPermission, setLocationPermission] = useState<Location.LocationPermissionResponse | null>(null);
+  const [locationError, setLocationError] = useState('');
+  const [locationIntro, setLocationIntro] = useState(false);
+  const [checkingLocation, setCheckingLocation] = useState(true);
+  const [locationActionLoading, setLocationActionLoading] = useState(false);
+  const [businessApprovalNotice, setBusinessApprovalNotice] = useState(false);
+  const [businessRequestError, setBusinessRequestError] = useState('');
+  const deferredIntro = useRef(false);
 
   const availableProducts = useMemo(() => products.filter((product) => product.quantity > 0), [products]);
   const categories = useMemo(
@@ -78,13 +117,32 @@ export default function ProductsScreen() {
     });
   }, [products, search, selectedCategory]);
   const availableOfferCount = filteredProducts.filter((product) => product.quantity > 0).length;
+  const lastUnitProducts = useMemo(
+    () => filteredProducts.filter((product) => product.quantity > 0 && product.quantity <= 3),
+    [filteredProducts],
+  );
+  const nearestProducts = useMemo(
+    () => [...filteredProducts].sort((a, b) => (a.distanceKm ?? Number.MAX_VALUE) - (b.distanceKm ?? Number.MAX_VALUE)),
+    [filteredProducts],
+  );
   const availablePacks = availableProducts.reduce((total, product) => total + product.quantity, 0);
 
   const loadProducts = useCallback(async (isRefresh = false) => {
+    if (!location) {
+      setProducts([]);
+      setError(false);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     try {
-      const result = await getProducts();
+      const result = await getNearbyProducts(
+        location.coords.latitude,
+        location.coords.longitude,
+        radiusKm,
+      );
       setProducts(result);
       setError(false);
       setSelectedCategory((current) =>
@@ -100,14 +158,46 @@ export default function ProductsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [location, radiusKm]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      void getCurrentBusinessRequest()
+        .then((request) => {
+          if (active) {
+            setBusinessApprovalNotice(request?.status === 'aprobada');
+            setBusinessRequestError('');
+          }
+        })
+        .catch((cause) => {
+          if (active) {
+            console.error('Error al consultar el estado de afiliación:', cause);
+            setBusinessRequestError(cause instanceof Error ? cause.message : 'No se pudo consultar el estado de afiliación.');
+          }
+        });
+      return () => { active = false; };
+    }, []),
+  );
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       const refresh = async () => {
+        if (!location) {
+          if (active) {
+            setProducts([]);
+            setError(false);
+            setLoading(false);
+          }
+          return;
+        }
         try {
-          const result = await getProducts();
+          const result = await getNearbyProducts(
+            location.coords.latitude,
+            location.coords.longitude,
+            radiusKm,
+          );
           if (active) {
             setProducts(result);
             setError(false);
@@ -133,12 +223,163 @@ export default function ProductsScreen() {
         active = false;
         clearInterval(timer);
       };
-    }, []),
+    }, [location, radiusKm]),
   );
 
-  const openSettings = () => {
+  const refreshLocation = useCallback(async (showIntroIfUndetermined: boolean, showLoader: boolean) => {
+    if (showLoader) setCheckingLocation(true);
+    try {
+      const permission = await Location.getForegroundPermissionsAsync();
+      setLocationPermission(permission);
+      if (!permission.granted) {
+        setLocation(null);
+        setLocationIntro(
+          showIntroIfUndetermined
+          && permission.status === 'undetermined'
+          && !deferredIntro.current,
+        );
+        setLocationError('');
+        return;
+      }
+
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      setLocation(currentLocation);
+      setLocationIntro(false);
+      setLocationError('');
+    } catch (cause) {
+      console.error('Error al obtener la ubicación del cliente:', cause);
+      setLocation(null);
+      setLocationIntro(false);
+      setLocationError('No se pudo obtener tu ubicación. Comprueba los permisos y vuelve a intentarlo.');
+    } finally {
+      if (showLoader) setCheckingLocation(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshLocation(true, true);
+    }, [refreshLocation]),
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshLocation(false, false);
+    });
+    return () => subscription.remove();
+  }, [refreshLocation]);
+
+  async function requestLocation() {
+    setLocationActionLoading(true);
+    setLocationError('');
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      setLocationPermission(permission);
+      if (!permission.granted) {
+        setLocation(null);
+        setLocationIntro(false);
+        return;
+      }
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      setLocation(currentLocation);
+      setLocationIntro(false);
+    } catch (cause) {
+      console.error('Error al solicitar la ubicación del cliente:', cause);
+      setLocation(null);
+      setLocationIntro(false);
+      setLocationError('No se pudo obtener tu ubicación. Comprueba los permisos y vuelve a intentarlo.');
+    } finally {
+      setLocationActionLoading(false);
+    }
+  }
+
+  async function activateLocation() {
+    if (locationPermission && !locationPermission.granted && !locationPermission.canAskAgain) {
+      setLocationActionLoading(true);
+      try {
+        await Linking.openSettings();
+      } catch (cause) {
+        console.error('No se pudieron abrir los ajustes de ubicación:', cause);
+        setLocationError('No se pudieron abrir los ajustes de ubicación.');
+      } finally {
+        setLocationActionLoading(false);
+      }
+      return;
+    }
+    if (locationPermission?.granted) {
+      await requestLocation();
+      return;
+    }
+    await requestLocation();
+  }
+
+  const openProfile = () => {
     router.push({ pathname: '/profile', params: { role: 'client', ...(phone ? { phone } : {}) } });
   };
+
+  function renderProductCarousel(items: Product[]) {
+    return (
+      <ScrollView
+        horizontal
+        decelerationRate="fast"
+        contentContainerStyle={styles.carouselList}
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+      >
+        {items.map((product) => (
+          <View key={product.id} style={styles.carouselCard}>
+            <ProductCard
+              onPress={() => router.push({
+                pathname: '/product',
+                params: {
+                  id: product.id,
+                  role: 'client',
+                  ...(product.distanceKm !== null ? { distanceKm: String(product.distanceKm) } : {}),
+                  ...(phone ? { phone } : {}),
+                },
+              })}
+              product={product}
+            />
+          </View>
+        ))}
+      </ScrollView>
+    );
+  }
+
+  if (locationIntro) {
+    return (
+      <Screen activeNavRoute="/explore" showBottomNav showBrand={false} showDecorations={false}>
+        <Eyebrow>Tu ubicación</Eyebrow>
+        <PageHeading
+          title="Activa tu ubicación"
+          description="La usamos para mostrarte únicamente los packs disponibles en comercios cercanos."
+        />
+        {businessRequestError ? <FormError message={businessRequestError} /> : null}
+        {businessApprovalNotice ? <BusinessApprovalBanner /> : null}
+        <Panel>
+          <PrimaryButton
+            accessibilityLabel="Permitir ubicación al usar la aplicación"
+            disabled={locationActionLoading}
+            label={locationActionLoading ? 'Solicitando permiso…' : 'Permitir al usar la app'}
+            onPress={() => { void requestLocation(); }}
+          />
+          <SecondaryButton
+            accessibilityLabel="Continuar sin activar la ubicación"
+            disabled={locationActionLoading}
+            label="Ahora no"
+            onPress={() => {
+              deferredIntro.current = true;
+              setLocationIntro(false);
+            }}
+          />
+        </Panel>
+      </Screen>
+    );
+  }
 
   return (
     <Screen contentStyle={styles.screenContent} showBottomNav showBrand={false} showDecorations={false}>
@@ -151,13 +392,41 @@ export default function ProductsScreen() {
         <Pressable
           accessibilityLabel="Abrir ajustes de tu cuenta"
           accessibilityRole="button"
-          onPress={openSettings}
+          onPress={openProfile}
           style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
         >
           <SymbolView name={{ ios: 'gearshape.fill', android: 'settings', web: 'settings' }} tintColor={palette.purple} size={20} />
         </Pressable>
       </View>
 
+      {checkingLocation && !location ? (
+        <View style={styles.loading}>
+          <ActivityIndicator color={palette.purple} />
+          <Text style={styles.message}>Comprobando ubicación…</Text>
+        </View>
+      ) : !location ? (
+        <>
+          {businessRequestError ? <FormError message={businessRequestError} /> : null}
+          {businessApprovalNotice ? <BusinessApprovalBanner /> : null}
+          <View style={styles.messageCard}>
+            <View style={styles.messageIcon}>
+              <SymbolView name={{ ios: 'mappin', android: 'location_on', web: 'location_on' }} tintColor={palette.green} size={21} />
+            </View>
+            <Text style={styles.messageTitle}>Ubicación desactivada</Text>
+            <Text style={styles.message}>
+              Activa el acceso a tu ubicación para consultar packs cercanos.
+              {locationError ? ` ${locationError}` : ''}
+            </Text>
+            <PrimaryButton
+              accessibilityLabel="Activar ubicación"
+              disabled={locationActionLoading}
+              label={locationActionLoading ? 'Abriendo ajustes…' : 'Activar ubicación'}
+              onPress={() => { void activateLocation(); }}
+            />
+          </View>
+        </>
+      ) : (
+        <>
       <View style={styles.searchBox}>
         <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} tintColor={palette.muted} size={19} />
         <TextInput
@@ -202,6 +471,35 @@ export default function ProductsScreen() {
           );
         })}
       </ScrollView>
+
+      <Text style={styles.sectionSubtitle}>Radio máximo</Text>
+      <ScrollView
+        horizontal
+        contentContainerStyle={styles.categoryList}
+        style={styles.categoryScroller}
+        showsHorizontalScrollIndicator={false}
+      >
+        {radiusOptions.map((radius) => {
+          const selected = radiusKm === radius;
+          return (
+            <Pressable
+              accessibilityLabel={`Buscar ofertas en un radio de ${radius} kilómetros`}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              key={radius}
+              onPress={() => setRadiusKm(radius)}
+              style={[styles.categoryChip, selected && styles.categoryChipSelected]}
+            >
+              <Text style={[styles.categoryChipText, selected && styles.categoryChipTextSelected]}>
+                {radius} km
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      {businessRequestError ? <FormError message={businessRequestError} /> : null}
+      {businessApprovalNotice ? <BusinessApprovalBanner /> : null}
 
       <View style={styles.availabilityCard}>
         <View style={styles.leafIcon}>
@@ -264,18 +562,23 @@ export default function ProductsScreen() {
           <ActivityIndicator color={palette.purple} />
           <Text style={styles.message}>Buscando packs cercanos…</Text>
         </View>
-      ) : filteredProducts.length > 0 ? (
-        <View style={styles.list}>
-          {filteredProducts.map((product) => (
-            <ProductCard
-              key={product.id}
-              onPress={() => router.push({
-                pathname: '/product',
-                params: { id: product.id, role: 'client', ...(phone ? { phone } : {}) },
-              })}
-              product={product}
-            />
-          ))}
+      ) : availableOfferCount > 0 ? (
+        <View>
+          {renderProductCarousel(filteredProducts)}
+          {lastUnitProducts.length > 0 ? (
+            <View style={styles.carouselSection}>
+              <Text style={styles.sectionTitle}>Últimas unidades</Text>
+              <Text style={styles.sectionSubtitle}>Packs con pocas unidades disponibles</Text>
+              {renderProductCarousel(lastUnitProducts)}
+            </View>
+          ) : null}
+          {nearestProducts.length > 0 ? (
+            <View style={styles.carouselSection}>
+              <Text style={styles.sectionTitle}>Cerca de ti</Text>
+              <Text style={styles.sectionSubtitle}>Ofertas ordenadas por distancia</Text>
+              {renderProductCarousel(nearestProducts)}
+            </View>
+          ) : null}
         </View>
       ) : (
         <View style={styles.emptyCard}>
@@ -283,11 +586,11 @@ export default function ProductsScreen() {
             <SymbolView name={{ ios: 'leaf', android: 'eco', web: 'eco' }} tintColor={palette.green} size={23} />
           </View>
           <Text style={styles.messageTitle}>
-            {availableProducts.length === 0 ? 'Aún no hay packs disponibles' : 'No encontramos coincidencias'}
+            {availableProducts.length === 0 ? 'No hay packs cerca todavía' : 'No encontramos coincidencias'}
           </Text>
           <Text style={styles.message}>
             {availableProducts.length === 0
-              ? 'Cuando los comercios publiquen nuevos packs, aparecerán aquí. Vuelve pronto.'
+              ? 'Amplía el radio para encontrar comercios cercanos. Vuelve a consultar más tarde.'
               : 'Prueba con otra búsqueda o elige una categoría diferente.'}
           </Text>
           {availableProducts.length > 0 && (search || selectedCategory !== 'Todas') ? (
@@ -300,6 +603,8 @@ export default function ProductsScreen() {
             </Pressable>
           ) : null}
         </View>
+      )}
+        </>
       )}
     </Screen>
   );
@@ -394,7 +699,9 @@ const styles = StyleSheet.create({
   sectionSubtitle: { color: palette.muted, fontSize: 12, marginTop: 3 },
   refreshButton: { alignItems: 'center', flexDirection: 'row', flexShrink: 0, gap: 5, minHeight: 34, paddingHorizontal: 3 },
   refreshText: { color: palette.purple, fontSize: 11, fontWeight: '700' },
-  list: { gap: 13, paddingBottom: 24 },
+  carouselSection: { marginTop: 16 },
+  carouselList: { gap: 13, paddingBottom: 18, paddingRight: 18, paddingTop: 12 },
+  carouselCard: { width: '88%' },
   card: {
     backgroundColor: palette.white,
     borderColor: palette.border,

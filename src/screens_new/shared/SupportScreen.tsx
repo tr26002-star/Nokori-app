@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { sendSupportComment } from '@/services/support-api';
 import { formatSalvadoranNationalPhone } from '@/services/phone';
+import { getCurrentApprovedBusiness } from '@/services/account-api';
 import { Eyebrow, PageHeading, Panel, Screen, palette } from './screen-ui';
 
 const COMMENT_MAX_LENGTH = 5000;
@@ -22,11 +23,18 @@ type SupportErrors = Partial<Record<SupportField, string>>;
 
 export default function SupportScreen() {
   const router = useRouter();
-  const { role: roleParam, phone: phoneParam } = useLocalSearchParams<{
-    role?: string;
+  const { phone: phoneParam, role: requestedRole } = useLocalSearchParams<{
     phone?: string;
+    role?: string;
   }>();
-  const role = roleParam === 'seller' ? 'seller' : 'client';
+  const [verifiedSeller, setVerifiedSeller] = useState<boolean | null>(null);
+  const role = requestedRole === 'seller'
+    ? verifiedSeller === null
+      ? null
+      : verifiedSeller
+        ? 'seller'
+        : 'client'
+    : 'client';
   const [type, setType] = useState<CommentType>('Falla');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState(typeof phoneParam === 'string' ? phoneParam.replace(/\D/g, '').slice(-8) : '');
@@ -45,6 +53,19 @@ export default function SupportScreen() {
     return () => clearTimeout(timer);
   }, [cooldown]);
 
+  useEffect(() => {
+    let active = true;
+    if (requestedRole !== 'seller') return () => { active = false; };
+    void getCurrentApprovedBusiness()
+      .then((business) => {
+        if (active) setVerifiedSeller(Boolean(business));
+      })
+      .catch((cause) => {
+        if (active) setSubmitError(cause instanceof Error ? cause.message : 'No se pudo verificar el perfil de tu cuenta.');
+      });
+    return () => { active = false; };
+  }, [requestedRole]);
+
   function validateForm(): boolean {
     const nextErrors: SupportErrors = {};
     if (!COMMENT_TYPES.includes(type)) nextErrors.type = 'Selecciona Falla o Mejora.';
@@ -60,7 +81,12 @@ export default function SupportScreen() {
   }
 
   async function handleSend() {
-    if (submittingRef.current || cooldown > 0 || !validateForm()) return;
+    if (submittingRef.current || cooldown > 0) return;
+    if (!role) {
+      setSubmitError('Espera a que se verifique el perfil de tu cuenta.');
+      return;
+    }
+    if (!validateForm()) return;
 
     submittingRef.current = true;
     setSubmitting(true);

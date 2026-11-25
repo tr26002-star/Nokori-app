@@ -71,7 +71,7 @@ export default function SellerReservationsScreen() {
   async function handleMarkAsDelivered(reservation: Reservation) {
     Alert.alert(
       'Confirmar recogida del pack',
-      `¿Confirmas que ${reservation.customerName} recogió ${reservation.packs} ${reservation.packs === 1 ? 'pack' : 'packs'} con el código #${reservation.ticketCode}? Total a cobrar: $${reservation.totalPrice.toFixed(2)}.`,
+      `¿Confirmas que ${reservation.customerName} recogió ${reservation.packs} ${reservation.packs === 1 ? 'pack' : 'packs'} con el código #${reservation.ticketCode}? Importe registrado (simulación): $${reservation.totalPrice.toFixed(2)}.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
